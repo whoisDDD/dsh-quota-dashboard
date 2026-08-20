@@ -1,0 +1,7 @@
+# dsh-quota-dashboard bundle patch.
+# 注册通用多平台额度/余额监视器到 DSH web 组合。
+# Host 半端注册 /dsh-quota-dashboard/{config,query,keys} 同源路由；
+# Client 半端渲染侧边栏呼吸灯 + 多平台额度面板与设置（URL/Key 输入）。
+- insert:
+    - id: quota-dashboard
+      name: 'dsh-quota-dashboard'
