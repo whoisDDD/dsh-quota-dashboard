@@ -413,10 +413,19 @@ window.__ModuleLoader__.load({
     // 纯函数：输入当前时间（Date 或 ms），返回 { mode, countdown }
     //   mode: 'peak' | 'valley'
     //   countdown: 距下一次峰/谷切换的秒数（≥0）
+    // 用 Intl API 的 timeZone:'Asia/Shanghai' 取北京时间的绝对时分秒，
+    // 不依赖系统时区、不做"加 8 小时"的 hack。
     function getPeakStatus(now) {
       const t = (now instanceof Date) ? now.getTime() : now
-      const d = new Date(t + 8 * 3600 * 1000) // UTC+8 北京时间的本地时钟
-      const secs = d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds()
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Shanghai',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false,
+      }).formatToParts(new Date(t))
+      const h = parseInt(parts.find((p) => p.type === 'hour').value, 10) % 24
+      const m = parseInt(parts.find((p) => p.type === 'minute').value, 10)
+      const s = parseInt(parts.find((p) => p.type === 'second').value, 10)
+      const secs = h * 3600 + m * 60 + s
       const isPeak = inPeakWindow(secs)
       // 距下一个切换点的秒数：找所有峰窗口边界中、比当前时间大的最近一个
       const bounds = []
