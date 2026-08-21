@@ -1,5 +1,7 @@
 # dsh-quota-dashboard
 
+[中文说明](README.zh-CN.md) | English
+
 A universal **AI API quota / balance live monitor** plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) Web GUI.
 
 A realtime button + terminal-style panel at the bottom of the sidebar aggregates your **balances** (DeepSeek / Moonshot / OpenRouter…) and **subscription quota windows** (OpenCode Go…). The DeepSeek title shows a live **peak/valley countdown** (per official pricing: peak = Beijing 9:00–12:00 & 14:00–18:00, valley = half price). The panel always follows the DSH light/dark theme. Auto-refresh every 30s–5min, or manual refresh.

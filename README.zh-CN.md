@@ -1,5 +1,7 @@
 # dsh-quota-dashboard
 
+English | [中文说明](README.zh-CN.md)
+
 通用多平台 API 额度 / 余额实时监视器 —— [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) Web GUI 插件。
 
 侧边栏底部一个实时按钮 + 终端风格面板，集中监控你的 **余额**（DeepSeek / Moonshot / OpenRouter…）与 **订阅额度窗口**（OpenCode Go…）。DeepSeek 标题实时显示 **峰/谷时段倒计时**（按官方定价页：高峰 = 北京时间 9:00–12:00 & 14:00–18:00，其余为谷时半价）。面板始终跟随 DSH 明暗主题，每 30 秒 ~ 5 分钟自动刷新，也可手动立即刷新。
