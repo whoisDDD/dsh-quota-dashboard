@@ -1,4 +1,4 @@
-// dsh-quota-dashboard v1.0.5 — 通用多平台 API 额度/余额实时监视器（Host 半端）
+// dsh-quota-dashboard v1.0.6 — 通用多平台 API 额度/余额实时监视器（Host 半端）
 //
 // 在 DeepSeek Harness Web GUI 中注册同源 HTTP 路由，供浏览器半端（client.js）轮询：
 //   GET  /dsh-quota-dashboard/config   → provider 注册表 + 默认值 + 已保存密钥状态（不含密钥本体）
@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 
 export const name = 'quota-dashboard'
 
-const VERSION = '1.0.5'
+const VERSION = '1.0.6'
 const UA = 'DSH-Quota-Dashboard/' + VERSION
 const REQUEST_TIMEOUT_MS = 20000
 const DEFAULT_INTERVAL_MS = 120000
@@ -230,65 +230,6 @@ const PARSERS = {
       message: json.is_available ? '账户可正常调用' : '余额不足或暂不可用',
     }
   },
-  moonshot(json) {
-    const d = (json && json.data) || {}
-    const available = toNum(d.available_balance) ?? toNum(d.total_balance) ?? toNum(d.balance)
-    if (available === null) throw new Error('Moonshot 响应中没有可识别的可用余额')
-    const currency = getStr(d.currency) || 'CNY'
-    const rows = [{ label: '可用余额', value: available, currency }]
-    const cash = toNum(d.cash_balance)
-    const voucher = toNum(d.voucher_balance)
-    if (cash !== null) rows.push({ label: '现金余额', value: cash, currency })
-    if (voucher !== null) rows.push({ label: '代金券余额', value: voucher, currency })
-    return { kind: 'balance', amount: available, currency, balanceRows: rows, message: 'Moonshot 开放平台余额' }
-  },
-  openrouter(json) {
-    const d = (json && json.data) || {}
-    const credits = toNum(d.total_credits)
-    const usage = toNum(d.total_usage)
-    if (credits === null || usage === null) throw new Error('OpenRouter 响应中没有可识别的 credits')
-    const currency = getStr(d.currency) || 'USD'
-    const remaining = credits - usage
-    return {
-      kind: 'balance',
-      amount: remaining,
-      currency,
-      balanceRows: [
-        { label: '剩余 credits', value: remaining, currency },
-        { label: '已购买 credits', value: credits, currency },
-        { label: '已使用 credits', value: usage, currency },
-      ],
-      message: 'OpenRouter',
-    }
-  },
-  openaiCost(json) {
-    const total = sumCostBuckets(json)
-    if (total === null) throw new Error('OpenAI 响应中没有可识别的成本数据')
-    return { kind: 'usage', amount: total, currency: 'USD', windows: [], message: '近 30 天组织用量' }
-  },
-  anthropicCost(json) {
-    const total = sumCostBuckets(json)
-    if (total === null) throw new Error('Anthropic 响应中没有可识别的成本数据')
-    return { kind: 'usage', amount: total, currency: 'USD', windows: [], message: '近 30 天组织用量（需 Admin Key）' }
-  },
-  togetherCost(json) {
-    const t = toNum(json.total_cost)
-    if (t === null) throw new Error('Together 响应中没有可识别的成本数据')
-    return { kind: 'usage', amount: t, currency: 'USD', windows: [], message: '近 30 天用量' }
-  },
-}
-function sumCostBuckets(json) {
-  const data = Array.isArray(json.data) ? json.data : []
-  if (!data.length) return null
-  let total = 0
-  for (const item of data) {
-    const results = Array.isArray(item.results) ? item.results : []
-    for (const bucket of results) {
-      const a = toNum(bucket.amount)
-      if (a !== null) total += a
-    }
-  }
-  return total
 }
 function customParse(json) {
   const balanceRows = extractBalanceGeneric(json)
@@ -301,17 +242,10 @@ function customParse(json) {
 }
 
 export const PROVIDERS = [
-  // ---- 余额类（均有官方文档确认端点）----
+  // ---- 官方内置平台（仅保留两个官方接口）----
   { id: 'deepseek', name: 'DeepSeek', kind: 'balance', defaultBaseUrl: 'https://api.deepseek.com', path: '/user/balance', auth: 'bearer', currency: 'CNY', keyEnv: 'DEEPSEEK_API_KEY', docsUrl: 'https://api-docs.deepseek.com/api/deepseek-api/user-balance', consoleUrl: 'https://platform.deepseek.com/usage', parse: PARSERS.deepseek },
-  { id: 'moonshot', name: 'Moonshot / Kimi 开放平台', kind: 'balance', defaultBaseUrl: 'https://api.moonshot.cn', path: '/v1/users/me/balance', auth: 'bearer', currency: 'CNY', keyEnv: 'MOONSHOT_API_KEY', docsUrl: 'https://platform.kimi.com/docs/api/balance', consoleUrl: 'https://platform.kimi.com/console', parse: PARSERS.moonshot },
-  { id: 'openrouter', name: 'OpenRouter', kind: 'balance', defaultBaseUrl: 'https://openrouter.ai/api', path: '/v1/credits', auth: 'bearer', currency: 'USD', keyEnv: 'OPENROUTER_API_KEY', docsUrl: 'https://openrouter.ai/docs/api-reference/get-credits', consoleUrl: 'https://openrouter.ai/settings/credits', parse: PARSERS.openrouter },
-  // ---- 订阅额度窗口（usage，可显示百分比进度条）----
   { id: 'opencode-go', name: 'OpenCode Go', kind: 'usage', defaultBaseUrl: 'https://opencode.ai', path: '/zen/go/v1/usage', auth: 'bearer', keyEnv: 'OPENCODE_GO_API_KEY', docsUrl: 'https://opencode.ai', consoleUrl: 'https://opencode.go', parse: opencodeGoParse },
-  // ---- 用量费用（组织/Admin Key 才能查到，端点为业界已知标准）----
-  { id: 'openai', name: 'OpenAI 组织用量', kind: 'usage', defaultBaseUrl: 'https://api.openai.com', path: '/v1/organization/costs', auth: 'bearer', currency: 'USD', keyEnv: 'OPENAI_API_KEY', needsDates: 'unix', docsUrl: 'https://platform.openai.com/docs/api-reference/organization/costs', consoleUrl: 'https://platform.openai.com/settings/organization/billing/overview', parse: PARSERS.openaiCost, note: '需组织管理员 Key；只显示近 30 天成本' },
-  { id: 'anthropic', name: 'Anthropic 组织用量', kind: 'usage', defaultBaseUrl: 'https://api.anthropic.com', path: '/v1/organizations/cost_report', auth: 'x-api-key', currency: 'USD', keyEnv: 'ANTHROPIC_API_KEY', needsDates: 'iso', extraHeaders: { 'anthropic-version': '2023-06-01' }, docsUrl: 'https://docs.anthropic.com', consoleUrl: 'https://console.anthropic.com', parse: PARSERS.anthropicCost, note: '需 Admin API Key；只显示近 30 天成本' },
-  { id: 'together', name: 'Together AI', kind: 'usage', defaultBaseUrl: 'https://api.together.xyz', path: '/v1/billing/usage', auth: 'bearer', currency: 'USD', keyEnv: 'TOGETHER_API_KEY', needsDates: 'date', docsUrl: 'https://docs.together.ai', consoleUrl: 'https://api.together.ai/settings/api-keys', parse: PARSERS.togetherCost, note: '只显示近 30 天用量' },
-  // ---- 通用自定义 ----
+  // ---- 其余平台（Moonshot / OpenRouter / OpenAI / Anthropic / Together 等）一律改用「自定义接口」接入 ----
   { id: 'custom', name: '自定义接口', kind: 'custom', path: '', auth: 'bearer', docsUrl: '', consoleUrl: '', parse: customParse, note: 'URL 填完整接口地址（含路径），自动识别余额/额度字段' },
 ]
 
@@ -423,32 +357,10 @@ function maskKey(key) {
 // 归一化查询
 // ---------------------------------------------------------------------------
 
-function buildQueryUrl(def, base, now) {
+function buildQueryUrl(def, base) {
   const b = (base || def.defaultBaseUrl || '').replace(/\/+$/, '')
   if (def.id === 'custom') return b // 用户直接填完整 URL
-  let url = b + def.path
-  if (def.needsDates) {
-    const qs = new URLSearchParams()
-    if (def.needsDates === 'unix') {
-      const end = Math.floor(now.getTime() / 1000)
-      const start = end - 30 * 86400
-      qs.set('start_time', String(start))
-      qs.set('end_time', String(end))
-      qs.set('bucket_width', '1d')
-    } else if (def.needsDates === 'iso') {
-      const endIso = now.toISOString()
-      const startIso = new Date(now.getTime() - 30 * 86400000).toISOString()
-      qs.set('start_time', startIso)
-      qs.set('end_time', endIso)
-      qs.set('bucket_width', '1d')
-    } else if (def.needsDates === 'date') {
-      const fmt = (d) => d.toISOString().slice(0, 10)
-      qs.set('start_date', fmt(new Date(now.getTime() - 30 * 86400000)))
-      qs.set('end_date', fmt(now))
-    }
-    url += '?' + qs.toString()
-  }
-  return url
+  return b + def.path
 }
 
 function buildHeaders(def, key) {
@@ -468,23 +380,13 @@ export async function runQuery(ctx, input) {
   if (!apiKey) {
     return { ok: false, provider: def.id, needKey: true, error: '未配置 API Key' + (def.keyEnv ? '（' + def.keyEnv + '）' : '') }
   }
-  const now = new Date()
-  let url = buildQueryUrl(def, getStr(input.baseUrl), now)
-  // 前置探测（Command Code 等需 whoami 取 orgId）：软失败返回 '' 时 URL 不变
-  if (typeof def.preflight === 'function') {
-    const b = (def.id === 'custom' ? getStr(input.baseUrl) : (getStr(input.baseUrl) || def.defaultBaseUrl || '')).replace(/\/+$/, '')
-    try {
-      const suffix = (await def.preflight(apiKey, b)) || ''
-      url = url + suffix
-    } catch (e) { /* ignore */ }
-  }
+  let url = buildQueryUrl(def, getStr(input.baseUrl))
   let res
   try {
     res = await httpFetch(url, buildHeaders(def, apiKey))
   } catch (e) {
     return { ok: false, provider: def.id, error: e.message, url }
   }
-  const hasJson = (res.text.match(/{|\[/) !== null)
   let json = null
   try { json = JSON.parse(res.text) } catch (e) { json = null }
   const base = { provider: def.id, name: def.name, kind: def.kind, source: url, httpStatus: res.status, refreshedAt: new Date().toISOString() }

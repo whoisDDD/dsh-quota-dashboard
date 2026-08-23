@@ -1,4 +1,4 @@
-// 真实网络 smoke：对 DeepSeek / Kimi Code / OpenCode Go 做一次真实查询。
+// 真实网络 smoke：对 DeepSeek / OpenCode Go 做一次真实查询。
 // 密钥仅在本机凭据库内解析，绝不输出；只打印归一化数值/错误消息（不含 raw）。
 // 运行：node scripts/smoke-live.mjs
 import { readFileSync } from 'node:fs'
@@ -25,9 +25,9 @@ const ctx = {
   },
 }
 
-const TARGETS = ['deepseek', 'kimi-code', 'opencode-go', 'command-code']
+const TARGETS = ['deepseek', 'opencode-go']
 for (const id of TARGETS) {
-  const ref = { deepseek: 'DEEPSEEK_API_KEY', 'kimi-code': 'KIMI_CODING_API_KEY', 'opencode-go': 'OPENCODE_GO_API_KEY', 'command-code': 'COMMANDCODE_API_KEY' }[id]
+  const ref = { deepseek: 'DEEPSEEK_API_KEY', 'opencode-go': 'OPENCODE_GO_API_KEY' }[id]
   if (!keyMap[ref]) { console.log('\n[' + id + '] 无凭据 ' + ref + '，跳过'); continue }
   console.log('\n===== ' + id + ' =====')
   const r = await runQuery(ctx, { provider: id })

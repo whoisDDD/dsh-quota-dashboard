@@ -4,7 +4,7 @@
 
 A universal **AI API quota / balance live monitor** plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) Web GUI.
 
-A realtime button + terminal-style panel at the bottom of the sidebar aggregates your **balances** (DeepSeek / Moonshot / OpenRouter…) and **subscription quota windows** (OpenCode Go…). The DeepSeek title shows a live **peak/valley countdown** (per official pricing: peak = Beijing 9:00–12:00 & 14:00–18:00, valley = half price). The panel always follows the DSH light/dark theme. Auto-refresh every 30s–5min, or manual refresh.
+A realtime button + terminal-style panel at the bottom of the sidebar aggregates your **balances** (DeepSeek official API…) and **subscription quota windows** (OpenCode Go…), with all other platforms attached via the **custom endpoint**. The DeepSeek title shows a live **peak/valley countdown** (per the latest official peak/valley pricing: peak = Beijing time Mon–Fri 9:00–12:00 & 14:00–18:00, 2× the off-peak price; all other hours, including all of the weekend, are valley at half price). The panel always follows the DSH light/dark theme. Auto-refresh every 30s–5min, or manual refresh.
 
 ## Highlights
 
@@ -14,7 +14,7 @@ A realtime button + terminal-style panel at the bottom of the sidebar aggregates
 - ⏱️ **Realtime refresh** – 30s / 1 / 2 / 5 min, plus manual refresh
 - 🔑 **Key physical isolation** – panel input (persisted locally, 0600) → DSH credentials vault → environment variable; the key stays in the host process, **never in URLs / logs / browser**
 - 🌗 **Theme-aware** – follows DSH light/dark automatically; no independent color options
-- ⏳ **DeepSeek peak/valley countdown** – live peak/valley indicator + countdown in the title (1s precision; only the countdown digit re-renders, not the whole tree)
+- ⏳ **DeepSeek peak/valley countdown** – live peak/valley indicator + countdown in the title (1s precision; only the countdown digit re-renders, not the whole tree). Per the latest official peak/valley pricing: peak = Beijing time Mon–Fri 9:00–12:00 & 14:00–18:00 (2× price); all other hours, including the entire weekend, are off-peak valley (half price)
 - 💾 **Config persistence** – enabled list + refresh interval dual-written to localStorage + host-side file (`~/.dsh/.dsh-quota-dashboard-client.json`); survives DSH restarts, browser data clearing, and browser switches
 - 📦 **Custom endpoint** – any API returning balance/quota fields can be attached (auto recursive detection)
 
@@ -22,16 +22,11 @@ A realtime button + terminal-style panel at the bottom of the sidebar aggregates
 
 | Type | Platform | Endpoint | Key env var |
 | --- | --- | --- | --- |
-| Balance | DeepSeek | `GET /user/balance` | `DEEPSEEK_API_KEY` |
-| Balance | Moonshot / Kimi OpenPlatform | `GET /v1/users/me/balance` | `MOONSHOT_API_KEY` |
-| Balance | OpenRouter | `GET /api/v1/credits` | `OPENROUTER_API_KEY` |
-| Quota windows | OpenCode Go | `GET /zen/go/v1/usage` | `OPENCODE_GO_API_KEY` |
-| Usage (30d) | OpenAI org | `GET /v1/organization/costs` | org Admin key (best effort) |
-| Usage (30d) | Anthropic | `GET /v1/organizations/cost_report` | Admin key (best effort) |
-| Usage (30d) | Together AI | `GET /v1/billing/usage` | `TOGETHER_API_KEY` |
-| Custom | any compatible API | full URL + key in panel | auto-detect |
+| Balance | DeepSeek (official) | `GET /user/balance` | `DEEPSEEK_API_KEY` |
+| Quota windows | OpenCode Go (subscription) | `GET /zen/go/v1/usage` | `OPENCODE_GO_API_KEY` |
+| Custom | any compatible API (incl. Moonshot / OpenRouter / OpenAI / Anthropic / Together…) | full URL + key in panel | auto-detect |
 
-> Only platforms with **officially documented endpoints** are included. The following were removed because their endpoints could not be verified against official docs or are only available to specific subscription tiers: SiliconFlow, MiniMax, StepFun, xAI, Kimi Code, Command Code, Zhipu GLM (Coding Plan only).
+> Only the DeepSeek official API and the OpenCode Go subscription are built in by default; every other platform is attached through the **custom endpoint** (full API URL + key, with automatic recursive detection of balance/quota fields).
 
 ## Install
 
@@ -63,8 +58,13 @@ Client config (enabled list + refresh interval) is automatically persisted to `$
 ```bash
 node --check index.js client.js
 node scripts/test-parsers.mjs   # fixture parser unit tests
+node scripts/test-peak.mjs      # peak/valley window + countdown boundary tests
 node scripts/smoke-live.mjs     # live smoke (reads credentials, redacted output)
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

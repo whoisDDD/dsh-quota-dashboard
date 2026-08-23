@@ -1,4 +1,5 @@
-// 解析器单测：用参考项目中的真实响应形状验证各平台 parse 输出归一化。
+// 解析器单测：用真实响应形状验证各平台 parse 输出归一化。
+// 当前内置平台仅 deepseek / opencode-go / custom（其余平台一律走自定义接口）。
 // 运行：node scripts/test-parsers.mjs
 import { getProvider, PROVIDERS } from '../index.js'
 
@@ -15,6 +16,8 @@ function run(id, fixture) {
 
 console.log('== provider 清单 ==')
 console.log('  ' + PROVIDERS.map((p) => p.id + '(' + p.kind + ')').join(', '))
+ok(PROVIDERS.length === 3, '内置平台仅 3 个（deepseek/opencode-go/custom）')
+ok(!PROVIDERS.some((p) => ['moonshot', 'openrouter', 'openai', 'anthropic', 'together'].includes(p.id)), '已移除 moonshot/openrouter/openai/anthropic/together')
 
 console.log('\n== deepseek 余额 ==')
 {
@@ -31,87 +34,6 @@ console.log('\n== deepseek 余额 ==')
     ok(r.currency === 'CNY', 'currency=CNY')
     ok(r.balanceRows.length === 6, '6 rows got ' + r.balanceRows.length)
     ok(r.balanceRows[0].label === '总余额' && r.balanceRows[0].value === 12.34, '首行总余额=12.34')
-  }
-}
-
-console.log('\n== moonshot 余额 ==')
-{
-  const r = run('moonshot', { data: { available_balance: '100.00', cash_balance: 60, voucher_balance: 40, currency: 'CNY' } })
-  if (r) {
-    ok(r.amount === 100, 'amount=100')
-    ok(r.balanceRows.length === 3, '3 rows (可用/现金/代金券)')
-    ok(r.currency === 'CNY', 'currency=CNY')
-  }
-}
-
-console.log('\n== siliconflow 余额 ==')
-{
-  const r = run('siliconflow', { data: { totalBalance: 50, balance: 20, chargeBalance: 30, currency: 'CNY', status: 'normal' } })
-  if (r) {
-    ok(r.amount === 50, 'amount=50')
-    ok(r.balanceRows.some((x) => x.label === '充值余额' && x.value === 30), '含充值余额30')
-    ok(r.message.includes('正常'), '状态正常')
-  }
-}
-
-console.log('\n== openrouter credits ==')
-{
-  const r = run('openrouter', { data: { total_credits: 10, total_usage: 2, currency: 'USD' } })
-  if (r) {
-    ok(r.amount === 8, 'amount=8 (10-2)')
-    ok(r.currency === 'USD')
-    ok(r.balanceRows[0].label === '剩余 credits' && r.balanceRows[0].value === 8, '剩余 credits 8')
-  }
-}
-
-console.log('\n== minimax ==')
-{
-  const r = run('minimax', { data: { remain: 88.5 } })
-  if (r) ok(r.kind === 'balance' && r.amount === 88.5, 'amount=88.5')
-}
-
-console.log('\n== stepfun ==')
-{
-  const r = run('stepfun', { balance: '75.2', total_cash_balance: 75.2, total_voucher_balance: 0 })
-  if (r) ok(r.amount === 75.2 && r.balanceRows.length === 3, 'amount=75.2, 3 rows')
-}
-
-console.log('\n== xai ==')
-{
-  const r = run('xai', { total: { val: -1234 }, usage: { val: -500 } })
-  if (r) ok(r.amount === 12.34 && r.currency === 'USD' && r.balanceRows.length === 2, 'amount=12.34 USD, 2 rows')
-}
-
-console.log('\n== zhipu GLM 配额 ==')
-{
-  const r = run('zhipu', { code: 200, data: { limits: [{ name: '5小时限额', number: 300, remaining: 120 }] } })
-  if (r) {
-    ok(r.kind === 'usage', 'kind=usage')
-    ok(r.windows.length === 1, '1 window')
-    ok(r.windows[0].label === '5小时限额', 'label')
-    ok(r.windows[0].percent === 60, 'percent(used%)=60 got ' + r.windows[0].percent)
-    ok(r.windows[0].used === 180 && r.windows[0].limit === 300, 'used=180 limit=300')
-  }
-}
-
-console.log('\n== kimi-code 订阅额度 ==')
-{
-  const r = run('kimi-code', {
-    data: {
-      usage: { used: 100, limit: 1000, remaining: 900, resetAt: '2026-08-20T00:00:00Z' },
-      limits: [
-        { name: '周限额', detail: { used: 100, limit: 1000, remaining: 900 }, window: { timeUnit: 'WEEK' } },
-      ],
-    },
-  })
-  if (r) {
-    ok(r.kind === 'usage', 'kind=usage')
-    ok(r.windows.length === 2, '2 windows (usage+limits)')
-    const u = r.windows.find((w) => w.used === 100 && w.limit === 1000)
-    ok(!!u && u.percent === 10, 'usage 已用10%')
-    ok(!!(u && u.resetAt), 'usage 带 resetAt')
-    const wk = r.windows.find((w) => w.label === '周限额')
-    ok(!!wk && wk.percent === 10 && wk.limit === 1000, '周限额已用10%/limit1000')
   }
 }
 
@@ -155,48 +77,19 @@ console.log('\n== custom 通用（used+limit）==')
   }
 }
 
-console.log('\n== openai 成本 ==')
+console.log('\n== custom 通用（Moonshot 形状 → 余额模式）==')
 {
-  const r = run('openai', { data: [{ results: [{ amount: 1.5 }, { amount: 2.5 }] }, { results: [{ amount: 1.0 }] }] })
-  if (r) ok(r.kind === 'usage' && r.amount === 5, 'cost=5')
-}
-
-console.log('\n== together 成本 ==')
-{
-  const r = run('together', { total_cost: 3.14 })
-  if (r) ok(r.kind === 'usage' && r.amount === 3.14, 'cost=3.14')
-}
-
-console.log('\n== command-code（credits + 5小时/每周窗口）==')
-{
-  const r = run('command-code', {
-    data: {
-      credits: { monthlyCredits: 100, purchasedCredits: 0, freeCredits: 0, belowThreshold: false, creditThreshold: null },
-      windowLimits: {
-        fiveHour: { used: 15, cap: 40, resetAt: 1787385600000, exceeded: false },
-        weekly: { used: 300, cap: 500, resetAt: 1787990400000, exceeded: false },
-      },
-    },
-  })
+  const r = run('custom', { data: { available_balance: '100.00', cash_balance: 60, voucher_balance: 40, currency: 'CNY' } })
   if (r) {
-    ok(r.kind === 'usage', 'kind=usage')
-    ok(r.windows.length === 2, '2 窗口 (5小时/每周)，余额不进 progress bar')
-    const five = r.windows.find((w) => w.label === '5 小时窗口')
-    ok(five && five.percent === 38, '5h 已用38%')
-    const weekly = r.windows.find((w) => w.label === '每周窗口')
-    ok(weekly && weekly.percent === 60 && weekly.limit === 500, '每周 已用60%/limit500')
-    ok(!r.windows.some((w) => w.credits), '窗口里无 credits 进度条')
-    ok(Array.isArray(r.balanceRows) && r.balanceRows.length === 3, 'balanceRows 3 行（分池）')
-    const monthly = r.balanceRows.find((b) => b.label === '月度额度')
-    ok(monthly && monthly.value === 100 && monthly.currency === 'credits', '月度额度=100 credits')
-    ok(r.balanceRows.some((b) => b.label === '已购额度') && r.balanceRows.some((b) => b.label === '免费额度'), '已购/免费额度各一行（不混淆）')
+    ok(r.amount === 100, 'amount=100')
+    ok(r.balanceRows.some((x) => x.label === '可用余额' && x.value === 100), '识别 available_balance 为可用余额')
+    ok(r.currency === 'CNY', 'currency=CNY')
   }
 }
-console.log('== command-code 低于阈值 → message 提示 ==')
+console.log('== custom 通用（OpenRouter 形状 → 余额模式）==')
 {
-  const r = run('command-code', { data: { credits: { monthlyCredits: 5, belowThreshold: true }, windowLimits: {} } })
-  if (r) ok(/低于阈值/.test(r.message) && r.balanceRows.length === 1, 'belowThreshold → message 提示 + 月度额度行')
-  else ok(true, '无 credits 字段时跳过（可接受）')
+  const r = run('custom', { data: { credits: 10, currency: 'USD' } })
+  if (r) ok(r.kind === 'balance' && r.amount === 10, 'credits=10 balance模式')
 }
 
 console.log('\n' + (process.exitCode ? '❌ 有失败项' : '✅ 全部通过'))

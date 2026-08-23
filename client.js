@@ -1,4 +1,4 @@
-// dsh-quota-dashboard v1.0.5 — 通用多平台 API 额度/余额实时监视器（Client 半端）
+// dsh-quota-dashboard v1.0.6 — 通用多平台 API 额度/余额实时监视器（Client 半端）
 // Web shell module-loader 形态。侧边栏底部（设置按钮上方 sidebar.footer.action）状态圆点按钮 +
 // 多平台额度/余额面板（终端风格，跟随 DSH 明暗主题）+ 可交互设置（Provider / Base URL / API Key / 刷新间隔）。
 // DeepSeek 标题实时显示峰/谷时段倒计时。数据通过同源 POST '/dsh-quota-dashboard/query' 从 Host 路由获取（Key 不进 URL、不落浏览器）。
@@ -335,7 +335,7 @@ window.__ModuleLoader__.load({
     }
 
     // 单平台卡片
-    function renderCard(card, id, providerMeta, rawOpen) {
+    function renderCard(card, id, providerMeta) {
       const meta = providerMeta || {}
       const name = card && card.name ? card.name : meta.name || id
       const state = cardState(card)
@@ -376,7 +376,10 @@ window.__ModuleLoader__.load({
         card && card.ok && card.kind === 'usage' && card.windows && card.windows.length > 0
           ? React.createElement('div', { className: 'qd-group' }, card.windows.map((w) => renderWinRow(w, id + '-')))
           : null,
-        rawOpen && card && card.raw ? React.createElement('pre', { className: 'qd-raw', key: id + '-raw' }, card.raw) : null,
+        // 失败时展示原始 JSON（截断 6000 字符），便于核对自定义接口的字段名
+        card && !card.ok && card.raw
+          ? React.createElement('pre', { className: 'qd-raw', key: id + '-raw' }, card.raw)
+          : null,
       )
     }
 
@@ -396,16 +399,17 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------------
     // 任务2：峰谷状态（纯函数）+ 局部每秒倒计时 Hook
     // 规则以 DeepSeek 官方定价页为准（https://api-docs.deepseek.com/zh-cn/quick_start/pricing/）：
-    //   高峰时段 = 北京时间 9:00–12:00 与 14:00–18:00；其余为空闲（谷）时段。
-    //   空闲时段价格为高峰时段的一半。
+    //   高峰时段 = 北京时间【周一至周五】9:00–12:00 与 14:00–18:00；
+    //   其余时段（含周末全天）均为空闲（谷）时段，价格为高峰时段的一半。
     // ---------------------------------------------------------------------------
     // 峰值时段边界（秒，自北京时间 00:00 起）
     const PEAK_WINDOWS = [
       [9 * 3600, 12 * 3600],   // 9:00 - 12:00
       [14 * 3600, 18 * 3600],  // 14:00 - 18:00
     ]
+    const PEAK_START = 9 * 3600  // 一周内最早的峰起点：工作日 9:00
     const DAY_SECS = 86400
-    // 判断某秒是否落在任一峰值窗口内
+    // 判断某秒是否落在任一峰值窗口内（是否工作日在外层判断）
     function inPeakWindow(secs) {
       for (const [s, e] of PEAK_WINDOWS) if (secs >= s && secs < e) return true
       return false
@@ -413,36 +417,40 @@ window.__ModuleLoader__.load({
     // 纯函数：输入当前时间（Date 或 ms），返回 { mode, countdown }
     //   mode: 'peak' | 'valley'
     //   countdown: 距下一次峰/谷切换的秒数（≥0）
-    // 用 Intl API 的 timeZone:'Asia/Shanghai' 取北京时间的绝对时分秒，
+    // 用 Intl API 的 timeZone:'Asia/Shanghai' 取北京时间的绝对时分秒与星期，
     // 不依赖系统时区、不做"加 8 小时"的 hack。
     function getPeakStatus(now) {
       const t = (now instanceof Date) ? now.getTime() : now
       const parts = new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Shanghai',
+        weekday: 'short',
         hour: 'numeric', minute: 'numeric', second: 'numeric',
         hour12: false,
       }).formatToParts(new Date(t))
-      const h = parseInt(parts.find((p) => p.type === 'hour').value, 10) % 24
-      const m = parseInt(parts.find((p) => p.type === 'minute').value, 10)
-      const s = parseInt(parts.find((p) => p.type === 'second').value, 10)
+      const partOf = (type) => parts.find((p) => p.type === type).value
+      // JS 星期惯例：0=周日 1=周一 … 6=周六；官方高峰仅在周一~周五（1-5）
+      const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+      const wd = WD[partOf('weekday')]
+      const isWeekday = wd >= 1 && wd <= 5
+      const h = parseInt(partOf('hour'), 10) % 24
+      const m = parseInt(partOf('minute'), 10)
+      const s = parseInt(partOf('second'), 10)
       const secs = h * 3600 + m * 60 + s
-      const isPeak = inPeakWindow(secs)
-      // 距下一个切换点的秒数：找所有峰窗口边界中、比当前时间大的最近一个
-      const bounds = []
-      for (const [s, e] of PEAK_WINDOWS) { bounds.push(s); bounds.push(e) }
-      bounds.sort((a, b) => a - b)
+      const isPeak = isWeekday && inPeakWindow(secs)
       let cd
       if (isPeak) {
         // 当前在峰内 → 下一个切换点是本窗口的 end
-        const end = PEAK_WINDOWS.find(([s, e]) => secs >= s && secs < e)[1]
+        const end = PEAK_WINDOWS.find(([a, b]) => secs >= a && secs < b)[1]
         cd = end - secs
-      } else {
-        // 当前在谷内 → 下一个切换点是下一个峰窗口的 start（跨日则回到今天 9:00）
-        cd = null
-        for (const b of bounds) {
-          if (b > secs) { if (cd === null || b < cd) cd = b - secs }
-        }
-        if (cd === null) cd = (DAY_SECS - secs) + bounds[0] // 跨日 → 明天 9:00
+      } else if (isWeekday) {
+        // 工作日谷内 → 下一个切换点是今日稍晚的峰窗口 start
+        for (const [a] of PEAK_WINDOWS) if (a > secs) { cd = a - secs; break }
+      }
+      if (cd === undefined) {
+        // 周末（或工作日 18:00 后无峰窗口）→ 下一个周一~周五 9:00
+        let days = 1
+        while (!((wd + days) % 7 >= 1 && (wd + days) % 7 <= 5)) days++
+        cd = days * DAY_SECS + PEAK_START - secs
       }
       return { mode: isPeak ? 'peak' : 'valley', countdown: cd }
     }
@@ -453,9 +461,6 @@ window.__ModuleLoader__.load({
       return p(h) + ':' + p(m) + ':' + p(s)
     }
     // 局部倒计时叶子组件：自持每秒 tick，只重渲染这一个 <span>，
-    // 不再拖累 QuotaDash 整树（所有卡片）每秒重渲染。父组件只在结果变化时
-    // 通过 onModeChange 感知「峰/谷」切换（mode 变化频率极低）。
-    // 局部倒计时叶子组件：自持每秒 tick，只重渲染这一个 <span>，
     // 不再拖累 QuotaDash 整树（所有卡片）每秒重渲染。
     function PeakCountdown() {
       const [st, setSt] = React.useState(() => getPeakStatus(new Date()))
@@ -463,7 +468,10 @@ window.__ModuleLoader__.load({
         const id = window.setInterval(() => setSt(getPeakStatus(new Date())), 1000)
         return () => window.clearInterval(id)
       }, [])
-      return React.createElement('span', { className: 'qd-peak ' + 'qd-peak-' + st.mode },
+      const title = st.mode === 'peak'
+        ? '高峰时段：官方价格为空闲的 2 倍 · 北京时间周一至周五 9:00–12:00、14:00–18:00'
+        : '空闲（谷）时段：官方价格为高峰的一半 · 北京时间周一至周五 9:00–12:00、14:00–18:00 之外（含周末全天）'
+      return React.createElement('span', { className: 'qd-peak ' + 'qd-peak-' + st.mode, title },
         '[' + (st.mode === 'valley' ? '谷' : '峰') + '] ' + fmtCountdown(st.countdown))
     }
 
@@ -481,9 +489,6 @@ window.__ModuleLoader__.load({
       // 各 provider 查询结果
       const [results, setResults] = React.useState({})
       const [updatedAt, setUpdatedAt] = React.useState(0)
-      // 面板状态
-      const [rawOpen, setRawOpen] = React.useState(false)
-
       const [settingsOpen, setSettingsOpen] = React.useState(false)
       // 设置表单
       const [selProvider, setSelProvider] = React.useState('deepseek')
@@ -496,8 +501,6 @@ window.__ModuleLoader__.load({
       const rootRef = React.useRef(null)
       const cfgRef = React.useRef(cfg)
       cfgRef.current = cfg
-      const providersRef = React.useRef(providers)
-      providersRef.current = providers
 
       // 同步 documentElement 的 color-scheme 到 DSH 当前明暗——浏览器原生 title 提示框
       // 是 OS 绘制、CSS 改不了，但它跟随 color-scheme，这样提示框底色/文字就跟随明暗统一。
@@ -647,7 +650,7 @@ window.__ModuleLoader__.load({
         setCfg(nextCfg); saveCfg(nextCfg)
         setResults((prev) => { const n = Object.assign({}, prev); delete n[id]; return n })
       }
-      // 快捷配置：一键启用一个或多个「已有 Key 可用」的平台（如 Command Code）
+      // 快捷配置：一键启用一个或多个「已有 Key 可用」的平台
       function quickEnable(idOrIds) {
         const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds]
         const cur = cfg.enabled.slice()
@@ -681,16 +684,6 @@ window.__ModuleLoader__.load({
           }
         }).catch((e) => setTestMsg('✗ ' + String((e && e.message) || e)))
       }
-      function saveKey() {
-        if (!selProvider || !selKey) return
-        apiPost('/dsh-quota-dashboard/keys', { provider: selProvider, apiKey: selKey }).then(() => {
-          apiGet('/dsh-quota-dashboard/config').then((res) => {
-            if (res && res.keys) { setKeysSaved(res.keys.saved || {}); setEnvVars(res.keys.envVars || []); setReadyProviders(res.keys.ready || []) }
-          })
-          setTestMsg('已保存到本机（Host 状态文件，0600）')
-          setSelKey('')
-        })
-      }
       function forgetKey(id) {
         apiPost('/dsh-quota-dashboard/keys', { provider: id }).then(() => {
           apiGet('/dsh-quota-dashboard/config').then((res) => {
@@ -707,8 +700,6 @@ window.__ModuleLoader__.load({
       const cards = cfg.enabled.map((e) => ({ id: e.id, card: results[e.id], meta: providers.find((p) => p.id === e.id) }))
       const overallRank = { err: 5, low: 4, warn: 2, ok: 1, idle: 0 }
       let overallState = 'idle'
-      let anyUsage = false
-      let anyBalance = false
       let worstAll = null
       let firstBalanceText = null
       cards.forEach(({ card }) => {
@@ -716,11 +707,9 @@ window.__ModuleLoader__.load({
         const st = cardState(card)
         if (overallRank[st] > overallRank[overallState]) overallState = st
         if (card.kind === 'usage') {
-          anyUsage = true
           const rem = worstRem(card.windows)
           if (rem !== null) worstAll = worstAll === null ? rem : Math.min(worstAll, rem)
         } else if (card.ok && hasAmount(card)) {
-          anyBalance = true
           if (firstBalanceText === null) firstBalanceText = fmtMoney(card.amount, card.currency)
         }
       })
@@ -778,7 +767,7 @@ window.__ModuleLoader__.load({
             cards.length === 0 && !configError
               ? React.createElement('div', { className: 'qd-tip' }, '暂无启用的平台 — 打开下方「设置」选择平台、填入 Base URL / API Key 后启用')
               : null,
-            cards.map(({ id, card, meta }) => renderCard(card, id, meta, rawOpen)),
+            cards.map(({ id, card, meta }) => renderCard(card, id, meta)),
           ),
           React.createElement('div', { className: 'qd-ctrl' },
             React.createElement('button', { className: 'qd-btn', onClick: () => doCheck(false), disabled: busy },
@@ -828,7 +817,7 @@ window.__ModuleLoader__.load({
               keysSaved[selProvider] && React.createElement('button', { className: 'qd-btn qd-btn-danger', onClick: () => { forgetKey(selProvider); setTestMsg('已清除本机 Key') } }, '清除本机 Key'),
             ),
             React.createElement('div', { className: 'qd-fieldRow' },
-              React.createElement('button', { className: 'qd-btn', onClick: testCurrent, disabled: busy && false }, '测试'),
+              React.createElement('button', { className: 'qd-btn', onClick: testCurrent }, '测试'),
               React.createElement('button', { className: 'qd-btn qd-btn-primary', onClick: enableCurrent }, isEnabled(selProvider) ? '更新' : '启用'),
               React.createElement('button', { className: 'qd-btn qd-btn-danger', onClick: () => removeProvider(selProvider) }, '从面板移除'),
               React.createElement('span', { className: 'qd-tip' },
@@ -898,7 +887,7 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         if (applied) return
         applied = true
-        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.5)')
+        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.6)')
         const slots = ctx.get('slots')
         if (slots === undefined) {
           console.warn('[dsh-quota-dashboard] slots 服务不可用，插件未注册')

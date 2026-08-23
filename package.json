@@ -1,7 +1,7 @@
 {
   "name": "dsh-quota-dashboard",
-  "version": "1.0.5",
-  "description": "通用多平台 API 额度/余额实时监视器（DeepSeek Harness Web GUI 插件）：侧边栏实时显示 DeepSeek / Moonshot / OpenRouter / OpenCode Go 等平台余额与订阅额度，DeepSeek 峰谷时段倒计时，跟随 DSH 明暗主题，可调刷新间隔（30s–5min），配置跨重启/浏览器持久化。",
+  "version": "1.0.6",
+  "description": "通用多平台 API 额度/余额实时监视器（DeepSeek Harness Web GUI 插件）：侧边栏实时显示 DeepSeek 官方接口 / OpenCode Go 订阅等平台余额与订阅额度（其余平台走自定义接口），DeepSeek 峰谷时段倒计时（官方峰谷定价：工作日高峰 2 倍、空闲半价），跟随 DSH 明暗主题，可调刷新间隔（30s–5min），配置跨重启/浏览器持久化。",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -11,8 +11,6 @@
     "usage",
     "balance",
     "deepseek",
-    "moonshot",
-    "openrouter",
     "opencode",
     "web-gui"
   ],
@@ -31,7 +29,8 @@
     "client.js",
     "cordis.patch.yml",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "CHANGELOG.md"
   ],
   "license": "MIT",
   "dsh": {
