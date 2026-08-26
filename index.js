@@ -61,9 +61,29 @@ const WINDOW_LABEL_MAP = {
   daily: '每日', hourly: '每小时', month: '月度', week: '周度', day: '今日',
 }
 
+// 显式时长窗 → 可读标签：部分接口（如 Kimi Code /v1/usages 的 limits[]）把窗口
+// 时长放在兄弟对象 { window: { duration, timeUnit }, detail: {...} } 里，数据节点的
+// 段名只剩 "detail"/"usage"，标签只能落成「窗口 N」。duration+timeUnit → 标签：
+// TIME_UNIT_MINUTE 300 → 近5小时；TIME_UNIT_DAY 7 → 近7天。无法识别 → null。
+function windowLabelOfDuration(duration, timeUnit) {
+  const d = toNum(duration)
+  if (d === null || d <= 0) return null
+  const u = typeof timeUnit === 'string' ? timeUnit.toUpperCase() : ''
+  let minutes = null
+  if (u.indexOf('MINUTE') >= 0) minutes = d
+  else if (u.indexOf('HOUR') >= 0) minutes = d * 60
+  else if (u.indexOf('DAY') >= 0) minutes = d * 1440
+  else if (u.indexOf('SECOND') >= 0) minutes = d / 60
+  if (minutes === null || !Number.isFinite(minutes) || minutes <= 0) return null
+  if (minutes % 1440 === 0) return '近' + (minutes / 1440) + '天'
+  if (minutes % 60 === 0) return '近' + (minutes / 60) + '小时'
+  if (minutes >= 60) return '近' + (Math.round(minutes / 6) / 10) + '小时'
+  return '近' + Math.max(1, Math.round(minutes)) + '分钟'
+}
+
 function extractWindowsGeneric(json) {
   const windows = []
-  const walk = (node, path, depth) => {
+  const walk = (node, path, depth, labelHint) => {
     if (node === null || typeof node !== 'object' || depth > 8) return
     const entries = Array.isArray(node)
       ? node.map((v, i) => [String(i), v])
@@ -88,8 +108,19 @@ function extractWindowsGeneric(json) {
     }
     if (typeof scalar.remainingpercent === 'number') percent = 100 - scalar.remainingpercent
     if (typeof scalar.percentremaining === 'number') percent = 100 - scalar.percentremaining
+    // 时长标签来源：① 自身内联的 duration+timeUnit；② 兄弟 window 对象
+    // （{duration,timeUnit} 与数据兄弟如 detail 并列时，给兄弟当标签提示）。
+    const ownDurationLabel = windowLabelOfDuration(scalar.duration, scalar.timeunit)
+    let siblingHint = null
+    for (const pair of sub) {
+      if (pair[0] === 'window' && pair[1] !== null && typeof pair[1] === 'object' && !Array.isArray(pair[1])) {
+        const hint = windowLabelOfDuration(pair[1].duration, pair[1].timeUnit ?? pair[1].timeunit)
+        if (hint) siblingHint = hint
+      }
+    }
+    const myLabel = ownDurationLabel || labelHint || null
     if (percent !== null) {
-      windows.push({ seg, percent: clamp(percent), resetAt: resetAt ? resetAt.toISOString() : null, status })
+      windows.push({ seg, labelHint: myLabel, percent: clamp(percent), resetAt: resetAt ? resetAt.toISOString() : null, status })
     } else {
       let used = null; let limit = null; let remaining = null; let input = null; let output = null; let number = null
       for (const k of Object.keys(scalar)) {
@@ -105,17 +136,18 @@ function extractWindowsGeneric(json) {
       if (used === null && input !== null && output !== null) used = input + output
       else if (used === null && input !== null) used = input
       if (used !== null && limit !== null && limit > 0 && used >= 0) {
-        windows.push({ seg, used, limit, resetAt: resetAt ? resetAt.toISOString() : null })
+        windows.push({ seg, labelHint: myLabel, used, limit, resetAt: resetAt ? resetAt.toISOString() : null })
       }
     }
-    for (const pair of sub) walk(pair[1], path ? path + '.' + pair[0] : String(pair[0]), depth + 1)
+    for (const pair of sub) walk(pair[1], path ? path + '.' + pair[0] : String(pair[0]), depth + 1, pair[0] === 'window' ? null : siblingHint)
   }
-  walk(json, '', 0)
+  walk(json, '', 0, null)
   const out = []
   const usedLabels = new Set()
   windows.forEach((w, i) => {
     let label = w.seg && WINDOW_LABEL_MAP[w.seg] ? WINDOW_LABEL_MAP[w.seg] : null
     if (!label && w.seg && /h$|d$|day|hour|week|month|min|小时|天|周|月/i.test(w.seg)) label = w.seg
+    if (!label && w.labelHint) label = w.labelHint
     if (!label && w.percent !== undefined) label = ['近5小时', '近7天', '近30天'][i] || ('窗口 ' + (i + 1))
     if (!label) label = '窗口 ' + (i + 1)
     if (usedLabels.has(label)) {

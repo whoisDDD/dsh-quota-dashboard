@@ -77,6 +77,37 @@ console.log('\n== custom 通用（used+limit）==')
   }
 }
 
+console.log('\n== custom 通用（Kimi Code /v1/usages 形状 → 时长窗标签）==')
+{
+  // 真实响应形状：顶层 usage = 周限额（无 window 对象，保持「窗口 N」兜底），
+  // limits[] 每项 = { window: { duration, timeUnit }, detail: { limit, used, remaining, resetTime } }
+  const r = run('custom', {
+    usage: { limit: 100, used: 67, remaining: 33, resetTime: '2026-08-31T14:57:18.403146Z' },
+    limits: [
+      { window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' }, detail: { limit: 100, used: 56, remaining: 44, resetTime: '2026-08-26T19:57:18.403146Z' } },
+      { window: { duration: 7, timeUnit: 'TIME_UNIT_DAY' }, detail: { limit: 100, used: 67, remaining: 33, resetTime: '2026-08-31T14:57:18.403146Z' } },
+    ],
+    user: { membership: { level: 'LEVEL_STANDARD' } },
+  })
+  if (r) {
+    ok(r.kind === 'usage', 'kind=usage')
+    const w5h = r.windows.find((w) => w.label === '近5小时')
+    ok(!!(w5h && w5h.used === 56 && w5h.limit === 100), 'limits 5h 窗 → 近5小时 已用56/100, got ' + JSON.stringify(w5h || null))
+    const wwk = r.windows.find((w) => w.label === '近7天')
+    ok(!!(wwk && wwk.used === 67), 'limits 7d 窗 → 近7天 已用67/100, got ' + JSON.stringify(wwk || null))
+    ok(!!(w5h && typeof w5h.resetAt === 'string' && w5h.resetAt.length > 0), '带 resetAt')
+  }
+}
+
+console.log('\n== custom 通用（内联 duration+timeUnit 自标签）==')
+{
+  const r = run('custom', { quota: { duration: 5, timeUnit: 'TIME_UNIT_HOUR', used: 10, limit: 50 } })
+  if (r) {
+    const w = r.windows.find((x) => x.label === '近5小时')
+    ok(!!(w && w.used === 10 && w.limit === 50), '内联时长 5h → 近5小时 已用10/50, got ' + JSON.stringify(w || null))
+  }
+}
+
 console.log('\n== custom 通用（Moonshot 形状 → 余额模式）==')
 {
   const r = run('custom', { data: { available_balance: '100.00', cash_balance: 60, voucher_balance: 40, currency: 'CNY' } })
