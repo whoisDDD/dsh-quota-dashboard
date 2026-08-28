@@ -123,4 +123,97 @@ console.log('== custom 通用（OpenRouter 形状 → 余额模式）==')
   if (r) ok(r.kind === 'balance' && r.amount === 10, 'credits=10 balance模式')
 }
 
+
+console.log('\n== custom 通用（siblingHint 唯一候选语义）==')
+{
+  // 唯一候选：window + detail（+ 纯元数据无额度键）→ hint 只给 detail
+  const r = run('custom', {
+    window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+    detail: { limit: 100, used: 56, remaining: 44, resetTime: '2026-08-26T19:57:18.403146Z' },
+    metadata: { name: 'kimi-code', version: 2 },
+  })
+  if (r) {
+    ok(r.windows.length === 1, '唯一候选 → 1 window, got ' + JSON.stringify(r.windows.map((w) => w.label)))
+    ok(r.windows[0].label === '近5小时', 'detail 获 近5小时, got ' + JSON.stringify(r.windows[0]))
+  }
+}
+{
+  // 多候选（metadata 亦含 used/limit）：保守回退不广播——完整断言数量 + 标签集
+  const r = run('custom', {
+    window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+    detail: { limit: 100, used: 56 },
+    metadata: { used: 1, limit: 10 },
+  })
+  if (r) {
+    ok(r.windows.length === 2, '双候选 → 2 windows, got ' + r.windows.length)
+    const labels = r.windows.map((w) => w.label).sort()
+    ok(JSON.stringify(labels) === JSON.stringify(['窗口 1', '窗口 2']), '标签集 = 窗口 1/窗口 2（无 近5小时 广播）, got ' + JSON.stringify(labels))
+    ok(!r.windows.some((w) => w.label === '近5小时'), '无广播标签')
+  }
+}
+{
+  // 两 quota 候选（detail + usage 同级，均含 used/limit）→ 保守回退
+  const r = run('custom', {
+    window: { duration: 7, timeUnit: 'TIME_UNIT_DAY' },
+    detail: { limit: 100, used: 67 },
+    usage: { limit: 50, used: 10 },
+  })
+  if (r) {
+    ok(r.windows.length === 2, '双 quota 候选 → 2 windows, got ' + r.windows.length)
+    const labels = r.windows.map((w) => w.label).sort()
+    ok(JSON.stringify(labels) === JSON.stringify(['窗口 1', '窗口 2']), '标签集 = 窗口 1/窗口 2, got ' + JSON.stringify(labels))
+  }
+}
+
+console.log('\n== custom 通用（timeUnit 精确白名单）==')
+{
+  const r = run('custom', {
+    window: { duration: 300, timeUnit: 'TIME_UNIT_MICROSECOND' },
+    detail: { limit: 100, used: 1 },
+  })
+  if (r) {
+    const labels = r.windows.map((w) => w.label)
+    ok(!labels.some((l) => /秒|分钟|小时|天/.test(l)), 'MICROSECOND → 无时长标签（不误识 SECOND）, got ' + JSON.stringify(labels))
+  }
+}
+{
+  const r = run('custom', {
+    window: { duration: 90, timeUnit: 'TIME_UNIT_MILLISECOND' },
+    detail: { limit: 100, used: 1 },
+  })
+  if (r) {
+    const labels = r.windows.map((w) => w.label)
+    ok(!labels.some((l) => /秒|分钟|小时|天/.test(l)), 'MILLISECOND → 无时长标签, got ' + JSON.stringify(labels))
+  }
+}
+{
+  const r = run('custom', {
+    window: { duration: 2, timeUnit: 'TIME_UNIT_FORTNIGHT' },
+    detail: { limit: 100, used: 1 },
+  })
+  if (r) {
+    const labels = r.windows.map((w) => w.label)
+    ok(!labels.some((l) => /秒|分钟|小时|天/.test(l)), '未知复合单位 → 无时长标签, got ' + JSON.stringify(labels))
+  }
+}
+
+console.log('\n== custom 通用（时长格式化边界）==')
+{
+  const cases = [
+    [30, 'TIME_UNIT_SECOND', '近30秒'],
+    [90, 'TIME_UNIT_SECOND', '近90秒'],
+    [61, 'TIME_UNIT_MINUTE', '近61分钟'],
+    [90, 'TIME_UNIT_MINUTE', '近90分钟'],
+    [5, 'TIME_UNIT_SECOND', '近5秒'],
+    [1.5, 'TIME_UNIT_HOUR', '近90分钟'],
+  ]
+  for (const [dur, unit, want] of cases) {
+    const r = run('custom', { window: { duration: dur, timeUnit: unit }, detail: { limit: 100, used: 1 } })
+    if (r) {
+      const w = r.windows[0]
+      ok(!!(w && w.label === want), dur + ' ' + unit + ' → ' + want + ', got ' + JSON.stringify(w && w.label))
+    }
+  }
+}
+
 console.log('\n' + (process.exitCode ? '❌ 有失败项' : '✅ 全部通过'))
