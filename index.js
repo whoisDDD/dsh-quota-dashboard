@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 
 export const name = 'quota-dashboard'
 
-const VERSION = '1.0.6'
+const VERSION = '1.0.7'
 const UA = 'DSH-Quota-Dashboard/' + VERSION
 const REQUEST_TIMEOUT_MS = 20000
 const DEFAULT_INTERVAL_MS = 120000

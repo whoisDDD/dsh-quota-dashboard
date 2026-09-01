@@ -1,5 +1,7 @@
-// dsh-quota-dashboard v1.0.6 — 通用多平台 API 额度/余额实时监视器（Client 半端）
-// Web shell module-loader 形态。侧边栏底部（设置按钮上方 sidebar.footer.action）状态圆点按钮 +
+// dsh-quota-dashboard v1.0.7 — 通用多平台 API 额度/余额实时监视器（Client 半端）
+// Web shell module-loader 形态（DeepSeek Harness 0.1.2-alpha.2 客户端契约：
+// 插件对象声明 inject: ['slots']，loader 等待服务就绪后再 apply）。
+// 侧边栏底部（设置按钮上方 sidebar.footer.action）状态圆点按钮 +
 // 多平台额度/余额面板（终端风格，跟随 DSH 明暗主题）+ 可交互设置（Provider / Base URL / API Key / 刷新间隔）。
 // DeepSeek 标题实时显示峰/谷时段倒计时。数据通过同源 POST '/dsh-quota-dashboard/query' 从 Host 路由获取（Key 不进 URL、不落浏览器）。
 window.__ModuleLoader__.load({
@@ -883,30 +885,59 @@ window.__ModuleLoader__.load({
 
     // 防重复注册：客户端模块在某些加载路径下可能触发多次 apply
     let applied = false
+    // alpha.2（0.1.2-alpha.2）契约：客户端插件对象必须声明 inject（服务名），
+    // loader 据此让 fiber 等待服务就绪后再调用 apply。本插件唯一的外部客户端
+    // 服务是 slots（由 @deepseek-ai/dsh-client-ui-renderer 提供）。此前未声明
+    // inject 时，apply 可能在 slots 提供之前执行：ctx.get('slots') 返回 undefined，
+    // 旧代码直接 return 且 applied 置位 —— 面板入口静默永久消失。
     module.exports = {
+      inject: ['slots'],
       apply(ctx) {
         if (applied) return
         applied = true
-        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.6)')
-        const slots = ctx.get('slots')
-        if (slots === undefined) {
-          console.warn('[dsh-quota-dashboard] slots 服务不可用，插件未注册')
-          return
-        }
-        const tag = document.createElement('style')
-        tag.textContent = CSS + TERMINAL_CSS
-        document.head.append(tag)
-        ctx.effect(() => () => tag.remove())
+        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.7)')
 
-        try {
-          ctx.effect(() => slots.inject('sidebar.footer.action', () => slots.register(
-            { name: 'sidebar.footer.action', id: 'quota-dashboard', order: 10, label: '多平台额度监控' },
-            (props) => React.createElement(QuotaDash, { wide: !!(props && props.wide) }),
-          )))
-          console.log('[dsh-quota-dashboard] 已注册到 sidebar.footer.action（侧边栏底部，设置按钮上方）')
-        } catch (e) {
-          console.error('[dsh-quota-dashboard] 注册失败:', e)
+        // ctx.get(name) 是可选查找（未就绪返回 undefined）；ctx.slots 是声明式
+        // 属性访问（未声明/未就绪时可能抛错，因此放在 try 内）。inject 声明已
+        // 保证 apply 时 slots 就绪，两条路径只是防御。
+        const slotsOf = () => {
+          try { const s = ctx.get('slots'); if (s) return s } catch (e) { /* ignore */ }
+          try { if (ctx.slots) return ctx.slots } catch (e) { /* ignore */ }
+          return undefined
         }
+        const registerSlot = (slots) => {
+          const tag = document.createElement('style')
+          tag.textContent = CSS + TERMINAL_CSS
+          document.head.append(tag)
+          ctx.effect(() => () => tag.remove())
+
+          try {
+            ctx.effect(() => slots.inject('sidebar.footer.action', () => slots.register(
+              { name: 'sidebar.footer.action', id: 'quota-dashboard', order: 10, label: '多平台额度监控' },
+              (props) => React.createElement(QuotaDash, { wide: !!(props && props.wide) }),
+            )))
+            console.log('[dsh-quota-dashboard] 已注册到 sidebar.footer.action（侧边栏底部，设置按钮上方）')
+          } catch (e) {
+            console.error('[dsh-quota-dashboard] 注册失败:', e)
+          }
+        }
+
+        const slots = slotsOf()
+        if (slots) { registerSlot(slots); return }
+
+        // 防御：slots 服务暂时不可用时不静默退出 —— 定时重试直至注册成功或
+        // 插件卸载（ctx.timeout 随 fiber 卸载自动清理；window.setTimeout 兜底
+        // 路径由 ctx.effect 注册清理）。
+        console.warn('[dsh-quota-dashboard] slots 服务尚未就绪，将自动重试注册')
+        let timer = null
+        ctx.effect(() => () => { if (timer !== null) window.clearTimeout(timer) })
+        const retry = () => {
+          const s = slotsOf()
+          if (s) { registerSlot(s); return }
+          if (typeof ctx.timeout === 'function') { ctx.timeout(retry, 1000); return }
+          timer = window.setTimeout(retry, 1000)
+        }
+        retry()
       },
     }
 
