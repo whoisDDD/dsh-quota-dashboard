@@ -2,6 +2,15 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 风格，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.7] - 2026-09-01
+
+### 修复 — 适配 DeepSeek Harness 0.1.2-alpha.2 客户端契约
+
+- `client.js`：客户端插件对象声明 `inject: ['slots']`。alpha.2 的 loader 以插件对象的 inject 声明驱动 fiber 激活并等待服务就绪；此前未声明时，`apply` 可能在 slots 服务（由 `@deepseek-ai/dsh-client-ui-renderer` 提供）就绪前执行，`ctx.get('slots')` 返回 `undefined` 后旧代码静默 `return`（且 `applied` 已置位），导致额度面板入口永不出现——Host 路由（`/dsh-quota-dashboard/config` 等）不受影响，因此表现为「Host 正常、面板消失」。
+- `client.js`：slots 服务暂时不可用时不静默退出，改为定时重试（`ctx.timeout`，随 fiber 卸载自动清理；`window.setTimeout` 兜底路径由 `ctx.effect` 注册清理），直至注册成功或插件卸载。
+- `package.json`：`dsh.client.inject` 声明服务提供方包 `@deepseek-ai/dsh-client-ui-renderer`（图级到达顺序，与官方客户端插件声明模式一致）。
+- 新增 `scripts/test-contract.mjs` 与 `npm test`：覆盖 dsh.client/`./client` 导出、module id、客户端 inject 声明、`sidebar.footer.action` 注册、Host 路由不泄露 Key、查询请求 Key 不进 URL、插件卸载清理。
+
 ## [1.0.6] - 2026-08-23
 
 ### 变更 — 峰谷显示对齐 DeepSeek 官方最新峰谷定价
