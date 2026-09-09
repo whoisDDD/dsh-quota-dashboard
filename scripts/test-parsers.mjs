@@ -91,10 +91,13 @@ console.log('\n== custom 通用（Kimi Code /v1/usages 形状 → 时长窗标�
   })
   if (r) {
     ok(r.kind === 'usage', 'kind=usage')
+    ok(r.windows.length === 3, 'Kimi 主 fixture → 恰 3 窗口（usage 兜底 + 近5小时 + 近7天）, got ' + r.windows.length + ': ' + JSON.stringify(r.windows.map((w) => w.label)))
     const w5h = r.windows.find((w) => w.label === '近5小时')
     ok(!!(w5h && w5h.used === 56 && w5h.limit === 100), 'limits 5h 窗 → 近5小时 已用56/100, got ' + JSON.stringify(w5h || null))
     const wwk = r.windows.find((w) => w.label === '近7天')
     ok(!!(wwk && wwk.used === 67), 'limits 7d 窗 → 近7天 已用67/100, got ' + JSON.stringify(wwk || null))
+    const labels = r.windows.map((w) => w.label).sort()
+    ok(JSON.stringify(labels) === JSON.stringify(['窗口 1', '近5小时', '近7天']), '完整标签集合精确（无额外窗口）, got ' + JSON.stringify(labels))
     ok(!!(w5h && typeof w5h.resetAt === 'string' && w5h.resetAt.length > 0), '带 resetAt')
   }
 }
@@ -103,8 +106,9 @@ console.log('\n== custom 通用（内联 duration+timeUnit 自标签）==')
 {
   const r = run('custom', { quota: { duration: 5, timeUnit: 'TIME_UNIT_HOUR', used: 10, limit: 50 } })
   if (r) {
-    const w = r.windows.find((x) => x.label === '近5小时')
-    ok(!!(w && w.used === 10 && w.limit === 50), '内联时长 5h → 近5小时 已用10/50, got ' + JSON.stringify(w || null))
+    ok(r.windows.length === 1, '内联时长 → 恰 1 窗口, got ' + r.windows.length + ': ' + JSON.stringify(r.windows.map((w) => w.label)))
+    const w = r.windows[0]
+    ok(w.label === '近5小时' && w.used === 10 && w.limit === 50, '内联时长 5h → 近5小时 已用10/50, got ' + JSON.stringify(w))
   }
 }
 
@@ -162,6 +166,33 @@ console.log('\n== custom 通用（siblingHint 唯一候选语义）==')
     ok(r.windows.length === 2, '双 quota 候选 → 2 windows, got ' + r.windows.length)
     const labels = r.windows.map((w) => w.label).sort()
     ok(JSON.stringify(labels) === JSON.stringify(['窗口 1', '窗口 2']), '标签集 = 窗口 1/窗口 2, got ' + JSON.stringify(labels))
+  }
+}
+
+console.log('\n== custom 通用（isQuotaDataCandidate 数字标量值校验）==')
+{
+  // 非数字标量值（占位字符串/嵌套对象）不算候选：detail 仍为唯一候选 → 广播
+  const r = run('custom', {
+    window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+    detail: { limit: 100, used: 56 },
+    metadata: { used: '—', limit: 'N/A' },
+  })
+  if (r) {
+    ok(r.windows.length === 1, '占位字符串兄弟不计候选 → 1 window, got ' + r.windows.length + ': ' + JSON.stringify(r.windows.map((w) => w.label)))
+    ok(r.windows[0].label === '近5小时', 'detail 获 近5小时（非数字候选不阻断）, got ' + JSON.stringify(r.windows[0]))
+  }
+}
+{
+  // 可解析数字字符串计入候选：双候选 → 保守回退
+  const r = run('custom', {
+    window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+    detail: { limit: 100, used: 56 },
+    metadata: { used: '1', limit: '10' },
+  })
+  if (r) {
+    ok(r.windows.length === 2, '数字字符串兄弟计入候选 → 2 windows, got ' + r.windows.length)
+    const labels = r.windows.map((w) => w.label).sort()
+    ok(JSON.stringify(labels) === JSON.stringify(['窗口 1', '窗口 2']), '双候选回退（数字字符串亦计）, got ' + JSON.stringify(labels))
   }
 }
 

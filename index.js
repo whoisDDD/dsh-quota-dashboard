@@ -94,11 +94,17 @@ function windowLabelOfDuration(duration, timeUnit) {
 // 同级「quota 数据候选」判定（轻量）：siblingHint 唯一候选语义用——非数组对象
 // 且含至少一个额度类数字标量键。与行产出条件同源（percent / used / limit /
 // remaining / input / output 族），只用于「同级唯一候选」计数，不求与行产出逐位一致。
+// 数字标量键语义：键名命中后，值须为有限数字或可解析数字字符串——{used: '—'}、
+// {used: {nested}} 这类占位/嵌套值不构成「额度数据」证据，不计候选。
 function isQuotaDataCandidate(node) {
   if (node === null || typeof node !== 'object' || Array.isArray(node)) return false
   return Object.keys(node).some((k) => {
     const key = String(k).toLowerCase()
-    return /percent|pct|^(used|usage|consumed)$|^(remaining|remain|left)$|^(limit|number|quota|total|cap|max|maximum)$|^(input|output|prompt|completion)$/.test(key)
+    if (!/percent|pct|^(used|usage|consumed)$|^(remaining|remain|left)$|^(limit|number|quota|total|cap|max|maximum)$|^(input|output|prompt|completion)$/.test(key)) return false
+    const v = node[k]
+    if (typeof v === 'number') return Number.isFinite(v)
+    if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number.isFinite(Number(v))
+    return false
   })
 }
 
