@@ -61,9 +61,56 @@ const WINDOW_LABEL_MAP = {
   daily: '每日', hourly: '每小时', month: '月度', week: '周度', day: '今日',
 }
 
+// 显式时长窗 → 可读标签：部分接口（如 Kimi Code /v1/usages 的 limits[]）把窗口
+// 时长放在兄弟对象 { window: { duration, timeUnit }, detail: {...} } 里，数据节点的
+// 段名只剩 "detail"/"usage"，标签只能落成「窗口 N」。duration+timeUnit → 标签：
+// TIME_UNIT_MINUTE 300 → 近5小时；TIME_UNIT_DAY 7 → 近7天。无法识别 → null。
+// 单位 = 精确白名单（无子串匹配）：TIME_UNIT_MICROSECOND/MILLISECOND 等未知单位
+// 一律 null——绝不产出「看似可信但错误」的时长标签。
+const TIME_UNIT_TO_SECONDS = {
+  TIME_UNIT_SECOND: 1,
+  TIME_UNIT_MINUTE: 60,
+  TIME_UNIT_HOUR: 3600,
+  TIME_UNIT_DAY: 86400,
+}
+function windowLabelOfDuration(duration, timeUnit) {
+  const d = toNum(duration)
+  if (d === null || d <= 0) return null
+  const u = typeof timeUnit === 'string' ? timeUnit.toUpperCase().trim() : ''
+  const perUnit = TIME_UNIT_TO_SECONDS[u]
+  if (!perUnit) return null
+  const s = d * perUnit
+  if (!Number.isFinite(s) || s <= 0) return null
+  // 格式化边界：<60s → 秒；整数天/小时/分钟 → 对应单位；<1h 非整分钟 → 精确秒
+  // （90s = 近90秒，不向上取整误导）；≥1h 非整小时 → 分钟（61min = 近61分钟）。
+  if (s < 60) return '近' + Math.max(1, Math.round(s)) + '秒'
+  if (s % 86400 === 0) return '近' + (s / 86400) + '天'
+  if (s % 3600 === 0) return '近' + (s / 3600) + '小时'
+  if (s % 60 === 0) return '近' + (s / 60) + '分钟'
+  if (s < 3600) return '近' + Math.round(s) + '秒'
+  return '近' + Math.round(s / 60) + '分钟'
+}
+
+// 同级「quota 数据候选」判定（轻量）：siblingHint 唯一候选语义用——非数组对象
+// 且含至少一个额度类数字标量键。与行产出条件同源（percent / used / limit /
+// remaining / input / output 族），只用于「同级唯一候选」计数，不求与行产出逐位一致。
+// 数字标量键语义：键名命中后，值须为有限数字或可解析数字字符串——{used: '—'}、
+// {used: {nested}} 这类占位/嵌套值不构成「额度数据」证据，不计候选。
+function isQuotaDataCandidate(node) {
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) return false
+  return Object.keys(node).some((k) => {
+    const key = String(k).toLowerCase()
+    if (!/percent|pct|^(used|usage|consumed)$|^(remaining|remain|left)$|^(limit|number|quota|total|cap|max|maximum)$|^(input|output|prompt|completion)$/.test(key)) return false
+    const v = node[k]
+    if (typeof v === 'number') return Number.isFinite(v)
+    if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number.isFinite(Number(v))
+    return false
+  })
+}
+
 function extractWindowsGeneric(json) {
   const windows = []
-  const walk = (node, path, depth) => {
+  const walk = (node, path, depth, labelHint) => {
     if (node === null || typeof node !== 'object' || depth > 8) return
     const entries = Array.isArray(node)
       ? node.map((v, i) => [String(i), v])
@@ -88,8 +135,31 @@ function extractWindowsGeneric(json) {
     }
     if (typeof scalar.remainingpercent === 'number') percent = 100 - scalar.remainingpercent
     if (typeof scalar.percentremaining === 'number') percent = 100 - scalar.percentremaining
+    // 时长标签来源：① 自身内联的 duration+timeUnit；② 兄弟 window 对象
+    // （{duration,timeUnit} 与数据兄弟如 detail 并列时，给兄弟当标签提示）。
+    // 广播修正：仅当同级非 window 对象里恰好存在唯一 quota 数据候选时才把 hint
+    // 传给该候选；零候选或多候选（如 detail + metadata 皆含 used/limit）= 保守
+    // 不广播，标签回退「窗口 N」——绝不把同一时长标签贴给无法确认关联的兄弟。
+    const ownDurationLabel = windowLabelOfDuration(scalar.duration, scalar.timeunit)
+    let siblingHint = null
+    for (const pair of sub) {
+      if (pair[0] === 'window' && pair[1] !== null && typeof pair[1] === 'object' && !Array.isArray(pair[1])) {
+        const hint = windowLabelOfDuration(pair[1].duration, pair[1].timeUnit ?? pair[1].timeunit)
+        if (hint) siblingHint = hint
+      }
+    }
+    let hintTarget = null
+    if (siblingHint) {
+      let candidates = 0
+      for (const pair of sub) {
+        if (pair[0] === 'window') continue
+        if (isQuotaDataCandidate(pair[1])) { candidates += 1; hintTarget = pair }
+      }
+      if (candidates !== 1) hintTarget = null
+    }
+    const myLabel = ownDurationLabel || labelHint || null
     if (percent !== null) {
-      windows.push({ seg, percent: clamp(percent), resetAt: resetAt ? resetAt.toISOString() : null, status })
+      windows.push({ seg, labelHint: myLabel, percent: clamp(percent), resetAt: resetAt ? resetAt.toISOString() : null, status })
     } else {
       let used = null; let limit = null; let remaining = null; let input = null; let output = null; let number = null
       for (const k of Object.keys(scalar)) {
@@ -105,17 +175,18 @@ function extractWindowsGeneric(json) {
       if (used === null && input !== null && output !== null) used = input + output
       else if (used === null && input !== null) used = input
       if (used !== null && limit !== null && limit > 0 && used >= 0) {
-        windows.push({ seg, used, limit, resetAt: resetAt ? resetAt.toISOString() : null })
+        windows.push({ seg, labelHint: myLabel, used, limit, resetAt: resetAt ? resetAt.toISOString() : null })
       }
     }
-    for (const pair of sub) walk(pair[1], path ? path + '.' + pair[0] : String(pair[0]), depth + 1)
+    for (const pair of sub) walk(pair[1], path ? path + '.' + pair[0] : String(pair[0]), depth + 1, pair[0] === 'window' ? null : (pair === hintTarget ? siblingHint : null))
   }
-  walk(json, '', 0)
+  walk(json, '', 0, null)
   const out = []
   const usedLabels = new Set()
   windows.forEach((w, i) => {
     let label = w.seg && WINDOW_LABEL_MAP[w.seg] ? WINDOW_LABEL_MAP[w.seg] : null
     if (!label && w.seg && /h$|d$|day|hour|week|month|min|小时|天|周|月/i.test(w.seg)) label = w.seg
+    if (!label && w.labelHint) label = w.labelHint
     if (!label && w.percent !== undefined) label = ['近5小时', '近7天', '近30天'][i] || ('窗口 ' + (i + 1))
     if (!label) label = '窗口 ' + (i + 1)
     if (usedLabels.has(label)) {
