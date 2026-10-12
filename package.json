@@ -1,6 +1,6 @@
 {
   "name": "dsh-quota-dashboard",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "通用多平台 API 额度/余额实时监视器（DeepSeek Harness Web GUI 插件）：侧边栏实时显示 DeepSeek 官方接口 / OpenCode Go 订阅等平台余额与订阅额度（其余平台走自定义接口），DeepSeek 峰谷时段倒计时（官方峰谷定价：工作日高峰 2 倍、空闲半价），跟随 DSH 明暗主题，可调刷新间隔（30s–5min），配置跨重启/浏览器持久化。",
   "keywords": [
     "deepseek-harness",
@@ -20,7 +20,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "node scripts/test-contract.mjs"
+    "test": "node scripts/test-contract.mjs && node scripts/test-parsers.mjs && node scripts/test-peak.mjs",
+    "test:runtime": "node scripts/test-runtime.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -49,7 +50,15 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6"
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

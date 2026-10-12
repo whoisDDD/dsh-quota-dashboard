@@ -1,4 +1,4 @@
-// dsh-quota-dashboard v1.0.6 — 通用多平台 API 额度/余额实时监视器（Host 半端）
+// dsh-quota-dashboard v1.0.8 — 通用多平台 API 额度/余额实时监视器（Host 半端）
 //
 // 在 DeepSeek Harness Web GUI 中注册同源 HTTP 路由，供浏览器半端（client.js）轮询：
 //   GET  /dsh-quota-dashboard/config   → provider 注册表 + 默认值 + 已保存密钥状态（不含密钥本体）
@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 
 export const name = 'quota-dashboard'
 
-const VERSION = '1.0.7'
+const VERSION = '1.0.8'
 const UA = 'DSH-Quota-Dashboard/' + VERSION
 const REQUEST_TIMEOUT_MS = 20000
 const DEFAULT_INTERVAL_MS = 120000

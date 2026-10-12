@@ -28,6 +28,19 @@ A realtime button + terminal-style panel at the bottom of the sidebar aggregates
 
 > Only the DeepSeek official API and the OpenCode Go subscription are built in by default; every other platform is attached through the **custom endpoint** (full API URL + key, with automatic recursive detection of balance/quota fields).
 
+## DSH compatibility
+
+Version 1.0.8 targets **DSH 0.2.0-rc.2**, the npm `latest` release checked on 2026-10-12, with Cordis 4.0.4. The separate `alpha` channel is not the compatibility target. The module-loader, `slots.inject/register`, `sidebar.footer.action`, credentials resolution, and WebServer route contracts are retained. Plugin and sidebar reloads now restore the button, and separate client contexts can each register it.
+
+Update DSH and reinstall the plugin in the Web profile:
+
+```bash
+npm install -g @deepseek-ai/dsh@0.2.0-rc.2
+dsh plugin --profile web add <absolute-path-to-dsh-quota-dashboard>
+```
+
+Stop the running Web process and start `dsh web` again. Existing saved keys and client settings keep their paths and formats. `dsh.client.inject` is informational package metadata; the exported plugin's `inject: ['slots']` controls service readiness.
+
 ## Install
 
 ```bash
@@ -56,7 +69,11 @@ Client config (enabled list + refresh interval) is automatically persisted to `$
 ## Develop / test
 
 ```bash
-node --check index.js client.js
+node --check index.js
+node --check client.js
+npm ci                     # development/test dependencies only
+npm test                   # contract + parser + countdown tests
+npm run test:runtime       # published DSH slots/WebServer lifecycle tests
 node scripts/test-parsers.mjs   # fixture parser unit tests
 node scripts/test-peak.mjs      # peak/valley window + countdown boundary tests
 node scripts/smoke-live.mjs     # live smoke (reads credentials, redacted output)

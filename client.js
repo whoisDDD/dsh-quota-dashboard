@@ -1,5 +1,5 @@
-// dsh-quota-dashboard v1.0.7 — 通用多平台 API 额度/余额实时监视器（Client 半端）
-// Web shell module-loader 形态（DeepSeek Harness 0.1.2-alpha.2 客户端契约：
+// dsh-quota-dashboard v1.0.8 — 通用多平台 API 额度/余额实时监视器（Client 半端）
+// Web shell module-loader 形态（DeepSeek Harness 0.2.0-rc.2 客户端契约：
 // 插件对象声明 inject: ['slots']，loader 等待服务就绪后再 apply）。
 // 侧边栏底部（设置按钮上方 sidebar.footer.action）状态圆点按钮 +
 // 多平台额度/余额面板（终端风格，跟随 DSH 明暗主题）+ 可交互设置（Provider / Base URL / API Key / 刷新间隔）。
@@ -883,19 +883,20 @@ window.__ModuleLoader__.load({
       )
     }
 
-    // 防重复注册：客户端模块在某些加载路径下可能触发多次 apply
-    let applied = false
-    // alpha.2（0.1.2-alpha.2）契约：客户端插件对象必须声明 inject（服务名），
-    // loader 据此让 fiber 等待服务就绪后再调用 apply。本插件唯一的外部客户端
-    // 服务是 slots（由 @deepseek-ai/dsh-client-ui-renderer 提供）。此前未声明
-    // inject 时，apply 可能在 slots 提供之前执行：ctx.get('slots') 返回 undefined，
-    // 旧代码直接 return 且 applied 置位 —— 面板入口静默永久消失。
+    // Track each Cordis context independently; module exports survive fiber reloads.
+    const appliedContexts = new WeakSet()
+    // Service inject gates activation; dsh.client.inject only describes package edges.
     module.exports = {
       inject: ['slots'],
       apply(ctx) {
-        if (applied) return
-        applied = true
-        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.7)')
+        if (appliedContexts.has(ctx)) return
+        appliedContexts.add(ctx)
+        let stopped = false
+        ctx.effect(() => () => {
+          stopped = true
+          appliedContexts.delete(ctx)
+        })
+        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.8)')
 
         // ctx.get(name) 是可选查找（未就绪返回 undefined）；ctx.slots 是声明式
         // 属性访问（未声明/未就绪时可能抛错，因此放在 try 内）。inject 声明已
@@ -932,6 +933,7 @@ window.__ModuleLoader__.load({
         let timer = null
         ctx.effect(() => () => { if (timer !== null) window.clearTimeout(timer) })
         const retry = () => {
+          if (stopped) return
           const s = slotsOf()
           if (s) { registerSlot(s); return }
           if (typeof ctx.timeout === 'function') { ctx.timeout(retry, 1000); return }

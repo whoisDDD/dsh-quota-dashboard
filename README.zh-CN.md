@@ -28,6 +28,19 @@ English | [中文说明](README.zh-CN.md)
 
 > 默认只内置 DeepSeek 官方接口与 OpenCode Go 订阅两个平台；其余平台一律通过「自定义接口」接入（填写完整接口地址 + Key，自动递归识别余额/额度字段）。
 
+## DSH 兼容性
+
+1.0.8 适配 **DSH 0.2.0-rc.2**（2026-10-12 核对的 npm `latest`），运行时为 Cordis 4.0.4。独立 `alpha` 通道不属于本次验证范围。保留 module-loader、`slots.inject/register`、`sidebar.footer.action`、凭据解析与 WebServer 路由契约，修复插件重载后入口消失，以及多个客户端上下文不能各自注册的问题。
+
+升级 DSH 后，在 Web profile 中重新安装插件：
+
+```bash
+npm install -g @deepseek-ai/dsh@0.2.0-rc.2
+dsh plugin --profile web add <本仓库的绝对路径>
+```
+
+停止原来的 Web 进程，重新运行 `dsh web`。已保存密钥和客户端配置的路径、格式保持兼容。`dsh.client.inject` 是包依赖说明；实际等待服务就绪由插件导出的 `inject: ['slots']` 控制。
+
 ## 安装
 
 ```bash
@@ -56,7 +69,11 @@ Key 解析顺序：面板输入（可存本机）> 本机状态文件 > DSH 凭�
 ## 开发 / 自测
 
 ```bash
-node --check index.js client.js
+node --check index.js
+node --check client.js
+npm ci                     # development/test dependencies only
+npm test                   # contract + parser + countdown tests
+npm run test:runtime       # published DSH slots/WebServer lifecycle tests
 node scripts/test-parsers.mjs     # fixture 解析单测
 node scripts/test-peak.mjs        # 峰谷时段/倒计时边界单测
 node scripts/smoke-live.mjs       # 真实网络 smoke（读取凭据库，输出脱敏）
