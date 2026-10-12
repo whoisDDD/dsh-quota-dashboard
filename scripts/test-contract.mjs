@@ -1,4 +1,4 @@
-// dsh-quota-dashboard 契约测试（针对 DeepSeek Harness 0.1.2-alpha.2 适配）
+// dsh-quota-dashboard 契约测试（针对 DeepSeek Harness 0.2.0-rc.2 适配）
 // 运行：npm test 或 node scripts/test-contract.mjs
 //
 // 覆盖：
@@ -20,9 +20,9 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const clientSrc = readFileSync(join(ROOT, 'client.js'), 'utf8')
 
 let failures = 0
-function test(name, fn) {
+async function test(name, fn) {
   try {
-    fn()
+    await fn()
     console.log('  ✓ ' + name)
   } catch (e) {
     failures += 1
@@ -102,10 +102,10 @@ function makeCtx(slots) {
   return { ctx, disposers }
 }
 
-console.log('== dsh-quota-dashboard 契约测试（alpha.2）==')
+console.log('== dsh-quota-dashboard 契约测试（0.2.0-rc.2）==')
 
 // 1. package.json：dsh.client 与 ./client 导出
-test('package.json: dsh.client 声明与 exports["./client"]', () => {
+await test('package.json: dsh.client 声明与 exports["./client"]', () => {
   eq(pkg.dsh.client.platform, 'web', 'dsh.client.platform')
   eq(pkg.exports['./client'], './client.js', 'exports["./client"]')
   eq(pkg.dsh.client.immediately, false, 'dsh.client.immediately')
@@ -114,7 +114,7 @@ test('package.json: dsh.client 声明与 exports["./client"]', () => {
 })
 
 // 2. module id == 包名
-test('client: module id 与包名一致', () => {
+await test('client: module id 与包名一致', () => {
   const m = clientSrc.match(/window\.__ModuleLoader__\.load\(\{\s*id:\s*['"]([^'"]+)['"]/)
   assert(m, 'client.js 顶部存在 __ModuleLoader__.load({ id, factory })')
   eq(m[1], pkg.name, 'load id')
@@ -122,14 +122,14 @@ test('client: module id 与包名一致', () => {
 })
 
 // 3. 客户端插件对象 inject 声明
-test('client: 插件对象声明 inject: [\'slots\'] 与 apply', () => {
+await test('client: 插件对象声明 inject: [\'slots\'] 与 apply', () => {
   const { exports: mod } = loadClientBundle()
   assert(Array.isArray(mod.inject) && mod.inject.includes('slots'), '插件对象 inject 包含 slots')
   eq(typeof mod.apply, 'function', 'apply 存在')
 })
 
 // 4. sidebar.footer.action 注册（参数 + 组件 + 清理链）
-test('client: apply 注册 sidebar.footer.action 且卸载可清理', () => {
+await test('client: apply 注册 sidebar.footer.action 且卸载可清理', () => {
   const { service, calls, disposed } = makeSlots()
   const { ctx, disposers } = makeCtx(service)
   const { exports: mod, styles } = loadClientBundle()
@@ -161,7 +161,7 @@ test('client: apply 注册 sidebar.footer.action 且卸载可清理', () => {
 })
 
 // 4b. slots 暂时不可用 → 重试而非静默退出（ctx.timeout 路径）
-test('client: slots 未就绪时重试注册，绝不静默退出', () => {
+await test('client: slots 未就绪时重试注册，绝不静默退出', () => {
   let current = undefined
   let scheduled = null
   const disposers = []
@@ -184,7 +184,7 @@ test('client: slots 未就绪时重试注册，绝不静默退出', () => {
 })
 
 // 4c. 兜底路径：无 ctx.timeout 时用 window.setTimeout，且卸载时清理
-test('client: 无 ctx.timeout 时 window.setTimeout 兜底并随卸载清理', () => {
+await test('client: 无 ctx.timeout 时 window.setTimeout 兜底并随卸载清理', () => {
   let scheduled = null
   let cleared = null
   const disposers = []
@@ -201,8 +201,21 @@ test('client: 无 ctx.timeout 时 window.setTimeout 兜底并随卸载清理', (
   eq(cleared, 99, '卸载时清理了重试定时器')
 })
 
+await test('client: 同一上下文防重复，卸载后允许重新应用', () => {
+  const { service, calls } = makeSlots()
+  const { ctx, disposers } = makeCtx(service)
+  const { exports: mod } = loadClientBundle()
+  mod.apply(ctx)
+  mod.apply(ctx)
+  eq(calls.inject.length, 1, '同一上下文仅注册一次')
+  for (const d of disposers.splice(0)) d()
+  mod.apply(ctx)
+  eq(calls.inject.length, 2, '卸载后可再次注册')
+  for (const d of disposers) d()
+})
+
 // 5. Host /config 路由不泄露 Key
-test('Host: /config 路由脱敏，响应不含 API Key', async () => {
+await test('Host: /config 路由脱敏，响应不含 API Key', async () => {
   const statePath = join(tmpdir(), 'dsh-quota-contract-state.json')
   writeFileSync(statePath, JSON.stringify({
     deepseek: { apiKey: 'sk-super-secret-abcdefghij123456', savedAt: '2026-09-01T00:00:00.000Z' },
@@ -241,7 +254,7 @@ test('Host: /config 路由脱敏，响应不含 API Key', async () => {
 })
 
 // 6. 查询请求不把 API Key 放进 URL
-test('Host: runQuery 的 Key 只走 Authorization 头，不进 URL', async () => {
+await test('Host: runQuery 的 Key 只走 Authorization 头，不进 URL', async () => {
   const host = await import('../index.js')
   const fetchCalls = []
   const oldFetch = globalThis.fetch
@@ -261,7 +274,7 @@ test('Host: runQuery 的 Key 只走 Authorization 头，不进 URL', async () =>
   }
 })
 
-test('client: fetch 均为同源相对路径，Key 不进 URL（静态契约）', () => {
+await test('client: fetch 均为同源相对路径，Key 不进 URL（静态契约）', () => {
   // apiGet/apiPost 的调用点全部传字符串字面量路径（fetch 的第一个实参是变量 path）
   const uris = [...clientSrc.matchAll(/(?:apiGet|apiPost)\(\s*([`'"])(.*?)\1/g)].map((m) => m[2])
   assert(uris.length >= 4, 'apiGet/apiPost 存在多处调用（config/query/client-cfg/keys）')
@@ -276,7 +289,7 @@ test('client: fetch 均为同源相对路径，Key 不进 URL（静态契约）'
 })
 
 // 7. 生命周期静态契约：React 定时器 / 观察器 / 监听器都有清理
-test('client: 定时器 / MutationObserver / 事件监听器均有清理（静态）', () => {
+await test('client: 定时器 / MutationObserver / 事件监听器均有清理（静态）', () => {
   assert(clientSrc.includes('return () => window.clearInterval(id)'), '峰谷倒计时每秒 tick 清理')
   assert(clientSrc.includes('clearInterval'), '自动刷新 interval 清理')
   assert(clientSrc.includes('mo.disconnect()'), 'MutationObserver 断开')

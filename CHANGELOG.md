@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 风格，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.8] - 2026-10-12
+
+### 修复 — 适配 DeepSeek Harness 0.2.0-rc.2（npm latest）
+
+- 更新 WebServer peer 范围至 `^0.2.0-rc.2`、Cordis 至 `^4.0.4`，避免旧 `0.1.x` 范围与新版 profile 冲突。
+- 客户端防重复注册改为每个 Cordis 上下文独立管理，卸载后清除状态；支持同一模块重新激活及多个客户端上下文。
+- 卸载后阻止待执行的重试回调重新注册。
+- 修复契约测试未等待异步断言的问题；`npm test` 包含解析与峰谷边界测试。
+- 新增基于实际发布的 DSH slots/WebServer 组件的生命周期测试、固定开发依赖与 CI。
+- 本机 DSH `0.2.1-alpha.1` 实测通过：Web profile 安装、侧边栏入口、设置面板、使用已有凭据的 DeepSeek 余额查询，以及页面刷新后重新加载。其他 alpha 版本仍未验证。
+- 补充升级说明；纠正 `dsh.client.inject` 的说明：它是信息性包依赖边，不控制激活顺序，服务等待由插件 `inject` 驱动。
+
 ## [1.0.7] - 2026-09-01
 
 ### 修复 — 适配 DeepSeek Harness 0.1.2-alpha.2 客户端契约
