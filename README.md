@@ -4,7 +4,7 @@
 
 A universal **AI API quota / balance live monitor** plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) Web GUI.
 
-A realtime button + terminal-style panel at the bottom of the sidebar aggregates your **balances** (DeepSeek official API…) and **subscription quota windows** (OpenCode Go…), with all other platforms attached via the **custom endpoint**. The DeepSeek title shows a live **peak/valley countdown** (per the latest official peak/valley pricing: peak = Beijing time Mon–Fri 9:00–12:00 & 14:00–18:00, 2× the off-peak price; all other hours, including all of the weekend, are valley at half price). The panel always follows the DSH light/dark theme. Auto-refresh every 30s–5min, or manual refresh.
+A realtime button + terminal-style panel at the bottom of the sidebar aggregates your **balances** (DeepSeek official API…) and **subscription quota windows** (OpenCode Go…), with all other platforms attached via the **custom endpoint**. The DeepSeek title shows a live **peak/valley countdown** (per the latest official peak/valley pricing: peak = Beijing time Mon–Fri (excluding Chinese public holidays) 9:00–12:00 & 14:00–18:00, 2× the off-peak price; all other hours, including all of the weekend, are valley at half price). The panel always follows the DSH light/dark theme. Auto-refresh every 30s–5min, or manual refresh.
 
 ## Highlights
 
@@ -14,7 +14,7 @@ A realtime button + terminal-style panel at the bottom of the sidebar aggregates
 - ⏱️ **Realtime refresh** – 30s / 1 / 2 / 5 min, plus manual refresh
 - 🔑 **Key physical isolation** – panel input (persisted locally, 0600) → DSH credentials vault → environment variable; the key stays in the host process, **never in URLs / logs / browser**
 - 🌗 **Theme-aware** – follows DSH light/dark automatically; no independent color options
-- ⏳ **DeepSeek peak/valley countdown** – live peak/valley indicator + countdown in the title (1s precision; only the countdown digit re-renders, not the whole tree). Per the latest official peak/valley pricing: peak = Beijing time Mon–Fri 9:00–12:00 & 14:00–18:00 (2× price); all other hours, including the entire weekend, are off-peak valley (half price)
+- ⏳ **DeepSeek peak/valley countdown** – live peak/valley indicator + countdown in the title (1s precision; only the countdown digit re-renders, not the whole tree). Per the latest official peak/valley pricing: peak = Beijing time Mon–Fri (excluding Chinese public holidays) 9:00–12:00 & 14:00–18:00 (2× price); all other hours, including the entire weekend, are off-peak valley (half price)
 - 💾 **Config persistence** – enabled list + refresh interval dual-written to localStorage + host-side file (`~/.dsh/.dsh-quota-dashboard-client.json`); survives DSH restarts, browser data clearing, and browser switches
 - 📦 **Custom endpoint** – any API returning balance/quota fields can be attached (auto recursive detection)
 
@@ -86,3 +86,8 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## License
 
 MIT. Based on [InvisibleSirius/dsh-quota-dashboard](https://github.com/InvisibleSirius/dsh-quota-dashboard).
+
+
+### DeepSeek holiday calendar
+
+Peak hours are 09:00–12:00 and 14:00–18:00 Beijing time, Monday through Friday excluding Chinese public holidays. All other hours, weekends (including makeup workdays), and Chinese public holidays are off-peak at half the peak price. The bundled calendar covers the full official 2026 holiday breaks. Update `HOLIDAY_RANGES` in `client.js` when a new annual notice is published. For unlisted years, possible peak windows show an unconfirmed status and unavailable countdowns show a calendar update notice. Account balances come from the official API; this plugin does not calculate charges.
