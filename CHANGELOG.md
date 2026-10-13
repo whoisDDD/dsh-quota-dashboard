@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 风格，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.9] - 2026-10-13
+
+### 修复 — DeepSeek 中国法定节假日峰谷规则
+
+- 按 [DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（2026-10-13 核对）排除中国法定节假日：北京时间周一至周五（不含节假日）09:00–12:00、14:00–18:00 为高峰，其他时段为空闲，空闲价格为高峰的一半。
+- 内置 [国务院 2026 年放假通知](https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm) 的完整放假调休区间；调休上班的周末仍全天为空闲。
+- 当前状态与下一次切换共用节假日判断，修复国庆、春节等假期被误报为高峰及倒计时错误。
+- 未收录年份的可能高峰窗口显示「待确认」，无法可靠预测的倒计时显示「日历待更新」；新年度通知发布后需维护日历。
+- 更新中英文文档与提示文案，增加七个假期完整区间、假期前后、秒级边界、调休周末、北京时间跨日及未知年份/跨年测试。
+- 余额仍由官方 API 返回，本插件不计算实际扣费。
+- 验证：`npm test`（契约、解析、160 个峰谷用例）、Host/Client 语法检查、UTC/洛杉矶/上海三时区峰谷测试均通过。DSH 运行时集成测试因依赖下载被网络限制阻断，未执行。
+
 ## [1.0.8] - 2026-10-12
 
 ### 修复 — 适配 DeepSeek Harness 0.2.0-rc.2（npm latest）
@@ -62,3 +74,4 @@
 ## [1.0.4 及更早]
 
 - 初版多平台额度/余额监视器（Host/Client 双端、Key 物理隔离、配置持久化），基于 [InvisibleSirius/dsh-quota-dashboard](https://github.com/InvisibleSirius/dsh-quota-dashboard) 修改。
+
