@@ -83,7 +83,8 @@ try {
   const res = response()
   await route.handler({ method: 'GET' }, res)
   assert.equal(res.code, 200)
-  assert.equal(JSON.parse(res.body).version, '1.0.8')
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(JSON.parse(res.body).version, pkg.version)
   assert.equal(server.exact.size, 4)
   await plugin.dispose()
   assert.equal(server.exact.size, 0)
@@ -95,3 +96,4 @@ try {
   await hostCtx.fiber.dispose()
   rmSync(home, { recursive: true, force: true })
 }
+
