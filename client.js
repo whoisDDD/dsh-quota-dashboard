@@ -1,4 +1,4 @@
-// dsh-quota-dashboard v1.0.8 — 通用多平台 API 额度/余额实时监视器（Client 半端）
+// dsh-quota-dashboard v1.0.9 — 通用多平台 API 额度/余额实时监视器（Client 半端）
 // Web shell module-loader 形态（DeepSeek Harness 0.2.0-rc.2 客户端契约：
 // 插件对象声明 inject: ['slots']，loader 等待服务就绪后再 apply）。
 // 侧边栏底部（设置按钮上方 sidebar.footer.action）状态圆点按钮 +
@@ -399,64 +399,65 @@ window.__ModuleLoader__.load({
     }
 
     // ---------------------------------------------------------------------------
-    // 任务2：峰谷状态（纯函数）+ 局部每秒倒计时 Hook
-    // 规则以 DeepSeek 官方定价页为准（https://api-docs.deepseek.com/zh-cn/quick_start/pricing/）：
-    //   高峰时段 = 北京时间【周一至周五】9:00–12:00 与 14:00–18:00；
-    //   其余时段（含周末全天）均为空闲（谷）时段，价格为高峰时段的一半。
-    // ---------------------------------------------------------------------------
-    // 峰值时段边界（秒，自北京时间 00:00 起）
+    // 峰谷状态以 DeepSeek 官方定价页为准：
+    // https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+    // 北京时间周一至周五（不含中国法定节假日）09:00–12:00、14:00–18:00 为峰；
+    // 其余时段（含周末、节假日全天）为谷，空闲价 = 高峰价 / 2。
     const PEAK_WINDOWS = [
-      [9 * 3600, 12 * 3600],   // 9:00 - 12:00
-      [14 * 3600, 18 * 3600],  // 14:00 - 18:00
+      [9 * 3600, 12 * 3600],
+      [14 * 3600, 18 * 3600],
     ]
-    const PEAK_START = 9 * 3600  // 一周内最早的峰起点：工作日 9:00
     const DAY_SECS = 86400
-    // 判断某秒是否落在任一峰值窗口内（是否工作日在外层判断）
-    function inPeakWindow(secs) {
-      for (const [s, e] of PEAK_WINDOWS) if (secs >= s && secs < e) return true
-      return false
+    // 国务院办公厅国办发明电〔2025〕7号，包含完整放假调休区间。
+    // https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm
+    // 周末即使调休上班，也不进入 DeepSeek 高峰；不要使用通用「工作日」日历。
+    // 新年度通知发布后更新此表。未收录年份不能假定没有节假日。
+    const HOLIDAY_RANGES = {
+      2026: [
+        ['01-01', '01-03'], ['02-15', '02-23'], ['04-04', '04-06'],
+        ['05-01', '05-05'], ['06-19', '06-21'], ['09-25', '09-27'],
+        ['10-01', '10-07'],
+      ],
     }
-    // 纯函数：输入当前时间（Date 或 ms），返回 { mode, countdown }
-    //   mode: 'peak' | 'valley'
-    //   countdown: 距下一次峰/谷切换的秒数（≥0）
-    // 用 Intl API 的 timeZone:'Asia/Shanghai' 取北京时间的绝对时分秒与星期，
-    // 不依赖系统时区、不做"加 8 小时"的 hack。
+    const beijingFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false,
+    })
+    // 输入以 UTC 字段承载的北京日历日期；返回 true/false/null（日历未知）。
+    function peakEligibleDate(date) {
+      const wd = date.getUTCDay()
+      if (wd === 0 || wd === 6) return false
+      const ranges = HOLIDAY_RANGES[date.getUTCFullYear()]
+      if (!ranges) return null
+      const md = String(date.getUTCMonth() + 1).padStart(2, '0') + '-' + String(date.getUTCDate()).padStart(2, '0')
+      return !ranges.some(([start, end]) => md >= start && md <= end)
+    }
+    // 纯函数：mode = peak/valley/unknown；countdown = 秒数或 null（日历未知）。
     function getPeakStatus(now) {
-      const t = (now instanceof Date) ? now.getTime() : now
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Shanghai',
-        weekday: 'short',
-        hour: 'numeric', minute: 'numeric', second: 'numeric',
-        hour12: false,
-      }).formatToParts(new Date(t))
-      const partOf = (type) => parts.find((p) => p.type === type).value
-      // JS 星期惯例：0=周日 1=周一 … 6=周六；官方高峰仅在周一~周五（1-5）
-      const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-      const wd = WD[partOf('weekday')]
-      const isWeekday = wd >= 1 && wd <= 5
-      const h = parseInt(partOf('hour'), 10) % 24
-      const m = parseInt(partOf('minute'), 10)
-      const s = parseInt(partOf('second'), 10)
-      const secs = h * 3600 + m * 60 + s
-      const isPeak = isWeekday && inPeakWindow(secs)
-      let cd
-      if (isPeak) {
-        // 当前在峰内 → 下一个切换点是本窗口的 end
-        const end = PEAK_WINDOWS.find(([a, b]) => secs >= a && secs < b)[1]
-        cd = end - secs
-      } else if (isWeekday) {
-        // 工作日谷内 → 下一个切换点是今日稍晚的峰窗口 start
-        for (const [a] of PEAK_WINDOWS) if (a > secs) { cd = a - secs; break }
+      const t = now instanceof Date ? now.getTime() : now
+      const parts = beijingFormatter.formatToParts(new Date(t))
+      const partOf = (type) => Number(parts.find((p) => p.type === type).value)
+      const date = new Date(Date.UTC(partOf('year'), partOf('month') - 1, partOf('day')))
+      const secs = (partOf('hour') % 24) * 3600 + partOf('minute') * 60 + partOf('second')
+      const eligible = peakEligibleDate(date)
+      const window = PEAK_WINDOWS.find(([start, end]) => secs >= start && secs < end)
+      if (eligible === null && window) return { mode: 'unknown', countdown: null }
+      if (eligible && window) return { mode: 'peak', countdown: window[1] - secs }
+      // 搜索今日和后续日期；遇到未知日历中可能的高峰起点便停止，绝不跨过它猜测。
+      for (let days = 0; days < 370; days++) {
+        const candidate = new Date(date.getTime() + days * DAY_SECS * 1000)
+        const canPeak = peakEligibleDate(candidate)
+        if (canPeak === false) continue
+        for (const [start] of PEAK_WINDOWS) {
+          const countdown = days * DAY_SECS + start - secs
+          if (countdown <= 0) continue
+          return { mode: 'valley', countdown: canPeak === null ? null : countdown }
+        }
       }
-      if (cd === undefined) {
-        // 周末（或工作日 18:00 后无峰窗口）→ 下一个周一~周五 9:00
-        let days = 1
-        while (!((wd + days) % 7 >= 1 && (wd + days) % 7 <= 5)) days++
-        cd = days * DAY_SECS + PEAK_START - secs
-      }
-      return { mode: isPeak ? 'peak' : 'valley', countdown: cd }
+      return { mode: 'valley', countdown: null }
     }
     function fmtCountdown(sec) {
+      if (sec === null) return '日历待更新'
       sec = Math.max(0, sec | 0)
       const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60); const s = sec % 60
       const p = (x) => (x < 10 ? '0' + x : '' + x)
@@ -471,10 +472,12 @@ window.__ModuleLoader__.load({
         return () => window.clearInterval(id)
       }, [])
       const title = st.mode === 'peak'
-        ? '高峰时段：官方价格为空闲的 2 倍 · 北京时间周一至周五 9:00–12:00、14:00–18:00'
-        : '空闲（谷）时段：官方价格为高峰的一半 · 北京时间周一至周五 9:00–12:00、14:00–18:00 之外（含周末全天）'
+        ? '高峰时段：官方价格为空闲的 2 倍 · 北京时间周一至周五（不含中国法定节假日）9:00–12:00、14:00–18:00'
+        : st.mode === 'unknown'
+          ? '节假日日历待更新，无法确认当前峰谷状态；请以 DeepSeek 官方定价页为准'
+          : '空闲（谷）时段：官方价格为高峰的一半 · 周末及中国法定节假日全天为空闲；未收录年份不预测下次高峰'
       return React.createElement('span', { className: 'qd-peak ' + 'qd-peak-' + st.mode, title },
-        '[' + (st.mode === 'valley' ? '谷' : '峰') + '] ' + fmtCountdown(st.countdown))
+        '[' + (st.mode === 'valley' ? '谷' : st.mode === 'peak' ? '峰' : '待确认') + '] ' + fmtCountdown(st.countdown))
     }
 
     function QuotaDash({ wide }) {
@@ -896,7 +899,7 @@ window.__ModuleLoader__.load({
           stopped = true
           appliedContexts.delete(ctx)
         })
-        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.8)')
+        console.log('[dsh-quota-dashboard] client bundle 已加载 (v1.0.9)')
 
         // ctx.get(name) 是可选查找（未就绪返回 undefined）；ctx.slots 是声明式
         // 属性访问（未声明/未就绪时可能抛错，因此放在 try 内）。inject 声明已
@@ -946,3 +949,4 @@ window.__ModuleLoader__.load({
     return module.exports
   },
 })
+
